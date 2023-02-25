@@ -174,7 +174,7 @@ class BYOL(nn.Module):
         net,
         image_size,
         hidden_layer = -2,
-        projection_size = 256,
+        projection_size = 512,
         projection_hidden_size = 4096,
         augment_fn = None,
         augment_fn2 = None,
@@ -254,6 +254,10 @@ class BYOL(nn.Module):
 
         online_pred_one = self.online_predictor(online_proj_one)
         online_pred_two = self.online_predictor(online_proj_two)
+
+        # print(image_one.size()) # [20, 3, 256, 256], [B, C, H, W]
+        # print(online_proj_one.size()) # [2, 512], [B, projection_size]
+        # print(online_pred_one.size()) # [2, 512], [B, projection_size]
 
         with torch.no_grad():
             target_encoder = self._get_target_encoder() if self.use_momentum else self.online_encoder
