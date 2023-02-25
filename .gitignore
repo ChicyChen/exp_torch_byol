@@ -131,3 +131,12 @@ dmypy.json
 cifar-10-batches-py/
 *.tar.gz
 *.pt
+cifar-100-python/
+ImageNet32/
+toy_cifar*
+*.tar
+*.jpg
+*.png
+ImageNet*
+data/
+checkpoints*
