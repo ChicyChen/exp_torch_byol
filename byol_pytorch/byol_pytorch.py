@@ -16,6 +16,9 @@ def default(val, def_val):
 def flatten(t):
     return t.reshape(t.shape[0], -1)
 
+def globalavepool(t):
+    return t.mean(dim=(-3, -2, -1)) 
+
 def singleton(cache_key):
     def inner_fn(fn):
         @wraps(fn)

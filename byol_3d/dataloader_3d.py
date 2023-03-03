@@ -39,7 +39,8 @@ def get_data_hmdb(transform=None,
                     batch_size=16, 
                     dim=150,
                     csv_root='/home/siyich/byol-pytorch/data_video',
-                    frame_root='/home/siyich/baselineCPC'):
+                    frame_root='/home/siyich/baselineCPC',
+                    num_aug=2):
     print('Loading data for "%s" ...' % mode)
     dataset = HMDB51(mode=mode,
                         transform=transform,
@@ -51,7 +52,8 @@ def get_data_hmdb(transform=None,
                         return_label=return_label,
                         dim=dim,
                         csv_root=csv_root,
-                        frame_root=frame_root
+                        frame_root=frame_root,
+                        num_aug=num_aug
                         )
     sampler = data.RandomSampler(dataset)
     if mode == 'train':
@@ -86,7 +88,8 @@ class HMDB51(data.Dataset):
                     return_label=False,
                     dim=150,
                     csv_root='/home/siyich/byol-pytorch/data_video',
-                    frame_root='/home/siyich/baselineCPC'
+                    frame_root='/home/siyich/baselineCPC',
+                    num_aug=2
                 ):
         self.mode = mode
         self.transform = transform
@@ -99,6 +102,7 @@ class HMDB51(data.Dataset):
         self.dim = dim
         self.csv_root = csv_root
         self.frame_root = frame_root
+        self.num_aug = num_aug
 
         if dim == 150:
             folder_name = 'hmdb51_150'
@@ -149,26 +153,35 @@ class HMDB51(data.Dataset):
         idx_block, vpath = items
         
         seq = [pil_loader(os.path.join(self.frame_root, vpath, 'image_%05d.jpg' % (i+1))) for i in idx_block]
-        if self.transform is not None and self.transform2 is not None:
-            t_seq = self.transform(seq) # apply same transform
-            t_seq2 = self.transform2(seq)
-        else:
-            t_seq = seq
-            t_seq2 = seq
-       
-        (C, H, W) = t_seq[0].size()
-        t_seq = torch.stack(t_seq, 0)
-        t_seq = t_seq.view(self.seq_len*self.num_seq, C, H, W)
-        t_seq2 = torch.stack(t_seq2, 0)
-        t_seq2 = t_seq2.view(self.seq_len*self.num_seq, C, H, W)
-        t_seq=t_seq.permute(1,0,2,3)
-        t_seq2=t_seq2.permute(1,0,2,3)
 
         if self.return_label:
             label = torch.LongTensor([aid])
-            return t_seq, t_seq2, label
-            
-        return t_seq, t_seq2
+
+        if self.transform is not None: 
+            t_seq = self.transform(seq) # apply same transform
+        else:
+            t_seq = seq
+        (C, H, W) = t_seq[0].size()
+        t_seq = torch.stack(t_seq, 0)
+        t_seq = t_seq.view(self.seq_len*self.num_seq, C, H, W)
+        t_seq=t_seq.permute(1,0,2,3) # C, T, H, W
+        
+        if self.num_aug > 1:
+            if self.transform2 is not None:
+                t_seq2 = self.transform2(seq)
+            else:
+                t_seq2 = seq
+            t_seq2 = torch.stack(t_seq2, 0)
+            t_seq2 = t_seq2.view(self.seq_len*self.num_seq, C, H, W)
+            t_seq2=t_seq2.permute(1,0,2,3)
+
+            if self.return_label:
+                return t_seq, t_seq2, label
+            return t_seq, t_seq2
+        
+        if self.return_label:
+            return t_seq, label
+        return t_seq
 
     def __len__(self):
         return len(self.video_info)
@@ -185,7 +198,8 @@ def get_data_ucf(transform=None,
                     batch_size=16, 
                     dim=150,
                     csv_root='/home/siyich/byol-pytorch/data_video',
-                    frame_root='/home/siyich/baselineCPC'):
+                    frame_root='/home/siyich/baselineCPC',
+                    num_aug=2):
     print('Loading data for "%s" ...' % mode)
     dataset = UCF101(mode=mode,
                         transform=transform,
@@ -197,7 +211,8 @@ def get_data_ucf(transform=None,
                         return_label=return_label,
                         dim=dim,
                         csv_root=csv_root,
-                        frame_root=frame_root
+                        frame_root=frame_root,
+                        num_aug=num_aug
                         )
     sampler = data.RandomSampler(dataset)
     if mode == 'train':
@@ -232,7 +247,8 @@ class UCF101(data.Dataset):
                 return_label=False,
                 dim=150,
                 csv_root='/home/siyich/byol-pytorch/data_video',
-                frame_root='/home/siyich/baselineCPC'
+                frame_root='/home/siyich/baselineCPC',
+                num_aug=2
                 ):
         self.mode = mode
         self.transform = transform
@@ -245,6 +261,7 @@ class UCF101(data.Dataset):
         self.dim = dim
         self.csv_root = csv_root
         self.frame_root = frame_root
+        self.num_aug = num_aug
 
         if dim == 150:
             folder_name = 'ucf101_150'
@@ -295,26 +312,35 @@ class UCF101(data.Dataset):
         idx_block, vpath = items
         
         seq = [pil_loader(os.path.join(self.frame_root, vpath, 'image_%05d.jpg' % (i+1))) for i in idx_block]
-        if self.transform is not None and self.transform2 is not None:
-            t_seq = self.transform(seq) # apply same transform
-            t_seq2 = self.transform2(seq)
-        else:
-            t_seq = seq
-            t_seq2 = seq
-       
-        (C, H, W) = t_seq[0].size()
-        t_seq = torch.stack(t_seq, 0)
-        t_seq = t_seq.view(self.seq_len*self.num_seq, C, H, W)
-        t_seq2 = torch.stack(t_seq2, 0)
-        t_seq2 = t_seq2.view(self.seq_len*self.num_seq, C, H, W)
-        t_seq=t_seq.permute(1,0,2,3)
-        t_seq2=t_seq2.permute(1,0,2,3)
 
         if self.return_label:
             label = torch.LongTensor([aid])
-            return t_seq, t_seq2, label
-            
-        return t_seq, t_seq2
+
+        if self.transform is not None: 
+            t_seq = self.transform(seq) # apply same transform
+        else:
+            t_seq = seq
+        (C, H, W) = t_seq[0].size()
+        t_seq = torch.stack(t_seq, 0)
+        t_seq = t_seq.view(self.seq_len*self.num_seq, C, H, W)
+        t_seq=t_seq.permute(1,0,2,3)
+        
+        if self.num_aug > 1:
+            if self.transform2 is not None:
+                t_seq2 = self.transform2(seq)
+            else:
+                t_seq2 = seq
+            t_seq2 = torch.stack(t_seq2, 0)
+            t_seq2 = t_seq2.view(self.seq_len*self.num_seq, C, H, W)
+            t_seq2=t_seq2.permute(1,0,2,3)
+
+            if self.return_label:
+                return t_seq, t_seq2, label
+            return t_seq, t_seq2
+        
+        if self.return_label:
+            return t_seq, label
+        return t_seq
 
     def __len__(self):
         return len(self.video_info)

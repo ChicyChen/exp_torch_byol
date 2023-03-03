@@ -32,11 +32,14 @@ parser.add_argument('--start-epoch', default=0, type=int,
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('--gpu', default='0,1', type=str)
 parser.add_argument('--batch_size', default=8, type=int)
-parser.add_argument('--epoch_num', default=10, type=int)
+parser.add_argument('--epoch_num', default=300, type=int)
 parser.add_argument('--hmdb', action='store_true')
 parser.add_argument('--random', action='store_true')
 parser.add_argument('--input_dim', default=512, type=int)
 parser.add_argument('--class_num', default=101, type=int)
+
+parser.add_argument('--lr', default=3e-4, type=float, help='learning rate')
+parser.add_argument('--wd', default=0, type=float, help='weight decay')
 
 
 def default_transform():
@@ -121,8 +124,8 @@ def main():
     global args
     args = parser.parse_args()
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/toy_ucf101_modify'
-    ckpt_path='/home/siyich/byol-pytorch/checkpoints/toy_ucf101_modify/epoch%s.pth.tar' % args.epoch_num
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/toy_ucf101_lr1e-05_wd1e-06'
+    ckpt_path='/home/siyich/byol-pytorch/checkpoints/toy_ucf101_lr1e-05_wd1e-06/resnet_epoch%s.pth.tar' % args.epoch_num
 
     if not args.hmdb:
         if args.random:
@@ -146,7 +149,7 @@ def main():
     resnet = models.video.r3d_18()
     # modify model
     resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-    resnet.maxpool = torch.nn.Identity()
+    # resnet.maxpool = torch.nn.Identity()
 
     model = BYOL(
         resnet,
@@ -166,8 +169,8 @@ def main():
     predict_model = predict_model.to(cuda)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(predict_model.parameters(), lr=3e-4, weight_decay=0)
-    scheduler = LinearLR(optimizer, start_factor=0.3, total_iters=10)
+    optimizer = torch.optim.Adam(predict_model.parameters(), lr=args.lr, weight_decay=args.wd)
+    # scheduler = LinearLR(optimizer, start_factor=0.3, total_iters=10)
 
     if not args.hmdb:
         logging.info(f"linear evaluation performed on ucf")
@@ -206,30 +209,26 @@ def main():
 
     if not args.random:
         resnet.load_state_dict(torch.load(ckpt_path)) # load model
-        epoch_list = range(args.start_epoch, args.epochs)
-        best_acc = 0
-
-        for i in epoch_list:
-            train_loss, train_acc = linear_train(predict_model, train_loader, criterion, optimizer)
-            test_acc = linear_eval(predict_model, test_loader)
-            scheduler.step()
-            if test_acc > best_acc:
-                best_acc = test_acc
-            
-            print('Epoch: %s, Train loss: %s' % (i, train_loss))
-            print('Epoch: %s, Train acc: %s' % (i, train_acc))
-            print('Epoch: %s, Test acc: %s' % (i, test_acc))
-            logging.info('Epoch: %s, Train loss: %s' % (i, train_loss))
-            logging.info('Epoch: %s, Train acc: %s' % (i, train_acc))
-            logging.info('Epoch: %s, Test acc: %s' % (i, test_acc))
-
-
         logging.info(f"linear evaluation performed after ssl")
-
     else:
         logging.info(f"linear evaluation performed with random weight")
-        best_acc = linear_eval(predict_model, test_loader)
     
+    epoch_list = range(args.start_epoch, args.epochs)
+    best_acc = 0
+    for i in epoch_list:
+        train_loss, train_acc = linear_train(predict_model, train_loader, criterion, optimizer)
+        test_acc = linear_eval(predict_model, test_loader)
+        # scheduler.step()
+        if test_acc > best_acc:
+            best_acc = test_acc
+        
+        print('Epoch: %s, Train loss: %s' % (i, train_loss))
+        print('Epoch: %s, Train acc: %s' % (i, train_acc))
+        print('Epoch: %s, Test acc: %s' % (i, test_acc))
+        logging.info('Epoch: %s, Train loss: %s' % (i, train_loss))
+        logging.info('Epoch: %s, Train acc: %s' % (i, train_acc))
+        logging.info('Epoch: %s, Test acc: %s' % (i, test_acc))
+
     print('Linear Eval Acc: %s \n' % best_acc)
     logging.info('Linear Eval Acc: %s \n' % best_acc)
 

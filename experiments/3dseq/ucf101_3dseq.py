@@ -37,6 +37,11 @@ parser.add_argument('--knn', action='store_true')
 parser.add_argument('--lr', default=1e-4, type=float, help='learning rate')
 parser.add_argument('--wd', default=1e-5, type=float, help='weight decay')
 
+parser.add_argument('--num_seq', default=2, type=int)
+parser.add_argument('--seq_len', default=4, type=int)
+parser.add_argument('--downsample', default=4, type=int)
+
+
 
 def default_transform():
     transform = transforms.Compose([
@@ -55,6 +60,8 @@ def default_transform():
 
 
 def train_one_epoch(model, train_loader, optimizer, train=True):
+    global have_print
+
     if train:
         model.train()
     else:
@@ -63,21 +70,32 @@ def train_one_epoch(model, train_loader, optimizer, train=True):
     num_batches = len(train_loader)
 
     for data in train_loader:
-        images, images2, label = data
-        images = images.to(cuda)
-        images2 = images2.to(cuda)
+        video, label = data # B, C, T, H, W
         label = label.to(cuda)
-        # print(images.size(), images2.size())
-        optimizer.zero_grad()
-        loss = model(images, images2)
-        if train:
-            loss.sum().backward()
-            optimizer.step()
-            # EMA update
-            model.module.update_moving_average()
-        else:
-            pass
-        total_loss += loss.sum().item()
+
+        for i in range(args.num_seq-1):
+            index = i*args.seq_len
+            index2 = (i+1)*args.seq_len
+            index3 = (i+2)*args.seq_len
+            images = video[:, :, index:index2, :, :]
+            images2 = video[:, :, index2:index3, :, :]
+            images = images.to(cuda)
+            images2 = images2.to(cuda)
+
+            if not have_print:
+                print(images.size(), images2.size())
+                have_print = True
+
+            optimizer.zero_grad()
+            loss = model(images, images2)
+            if train:
+                loss.sum().backward()
+                optimizer.step()
+                # EMA update
+                model.module.update_moving_average()
+            else:
+                pass
+            total_loss += loss.sum().item()
     
     return total_loss/num_batches
 
@@ -85,10 +103,13 @@ def main():
     torch.manual_seed(233)
     np.random.seed(233)
 
+    global have_print
+    have_print = False
+
     global args
     args = parser.parse_args()
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/toy_ucf101_lr%s_wd%s' % (args.lr, args.wd)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/3dseq_ucf101_lr%s_wd%s' % (args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -103,7 +124,7 @@ def main():
     resnet = models.video.r3d_18()
     # modify model
     resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-    # resnet.maxpool = torch.nn.Identity()
+    resnet.maxpool = torch.nn.Identity()
 
     model = BYOL(
         resnet,
@@ -126,16 +147,18 @@ def main():
                                 mode='train', 
                                 transform=default_transform(), 
                                 transform2=default_transform(),
-                                seq_len=8, 
-                                num_seq=1, 
-                                downsample=8)
+                                seq_len=args.seq_len, 
+                                num_seq=args.num_seq, 
+                                downsample=args.downsample,
+                                num_aug=1)
     test_loader = get_data_ucf(batch_size=args.batch_size, 
                                 mode='val',
                                 transform=default_transform(), 
                                 transform2=default_transform(),
-                                seq_len=8, 
-                                num_seq=1, 
-                                downsample=8)
+                                seq_len=args.seq_len, 
+                                num_seq=args.num_seq, 
+                                downsample=args.downsample,
+                                num_aug=1)
     
     train_loss_list = []
     test_loss_list = []

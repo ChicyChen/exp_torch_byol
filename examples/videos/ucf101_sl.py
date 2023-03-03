@@ -26,15 +26,15 @@ from torch.optim.lr_scheduler import LinearLR
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--epochs', default=30, type=int,
+parser.add_argument('--epochs', default=100, type=int,
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int,
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('--gpu', default='0,1', type=str)
 parser.add_argument('--batch_size', default=8, type=int)
-parser.add_argument('--epoch_num', default=100, type=int)
+# parser.add_argument('--epoch_num', default=100, type=int)
 parser.add_argument('--hmdb', action='store_true')
-parser.add_argument('--random', action='store_true')
+# parser.add_argument('--random', action='store_true')
 parser.add_argument('--input_dim', default=512, type=int)
 parser.add_argument('--class_num', default=51, type=int)
 
@@ -124,24 +124,24 @@ def main():
     global args
     args = parser.parse_args()
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/toy_ucf101_modify'
-    ckpt_path='/home/siyich/byol-pytorch/checkpoints/toy_ucf101_modify/epoch%s.pth.tar' % args.epoch_num
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/supervised_learning'
+    # ckpt_path='/home/siyich/byol-pytorch/checkpoints/toy_ucf101_modify/epoch%s.pth.tar' % args.epoch_num
 
     if not args.hmdb:
         args.class_num = 101
-        if args.random:
-            logging.basicConfig(filename=os.path.join(ckpt_folder, 'ucf_ft_epoch0_ftlr%s.log' % args.lr), level=logging.INFO)
-        else:
-            logging.basicConfig(filename=os.path.join(ckpt_folder, 'ucf_ft_epoch%s_ftlr%s_wd%s.log' % (args.epoch_num, args.lr, args.wd)), level=logging.INFO)
+        # if args.random:
+        logging.basicConfig(filename=os.path.join(ckpt_folder, 'ucf_sl_lr%s.log' % args.lr), level=logging.INFO)
+        # else:
+            # logging.basicConfig(filename=os.path.join(ckpt_folder, 'ucf_sl_epoch%s_ftlr%s_wd%s.log' % (args.epoch_num, args.lr, args.wd)), level=logging.INFO)
     else:
         args.class_num = 51
-        if args.random:
-            logging.basicConfig(filename=os.path.join(ckpt_folder, 'hmdb_ft_epoch0_ftlr%s.log' % args.lr), level=logging.INFO)
-        else:
-            logging.basicConfig(filename=os.path.join(ckpt_folder, 'hmdb_ft_epoch%s_ftlr%s_wd%s.log' % (args.epoch_num, args.lr, args.wd)), level=logging.INFO)
+        # if args.random:
+        logging.basicConfig(filename=os.path.join(ckpt_folder, 'hmdb_sl_lr%s.log' % args.lr), level=logging.INFO)
+        # else:
+            # logging.basicConfig(filename=os.path.join(ckpt_folder, 'hmdb_sl_epoch%s_ftlr%s_wd%s.log' % (args.epoch_num, args.lr, args.wd)), level=logging.INFO)
     logging.info('Started')
-    if not args.random:
-        logging.info(ckpt_path)
+    # if not args.random:
+        # logging.info(ckpt_path)
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
     global cuda
@@ -174,7 +174,8 @@ def main():
         if 'linear_pred' in name:
             params.append({'params': param})
         else:
-            params.append({'params': param, 'lr': args.lr/10})
+            # params.append({'params': param, 'lr': args.lr/10})
+            params.append({'params': param})
     # print(len(params))
     print('\n===========Check Grad============')
     for name, param in predict_model.named_parameters():
@@ -186,7 +187,7 @@ def main():
     scheduler = LinearLR(optimizer, start_factor=0.3, total_iters=10)
 
     if not args.hmdb:
-        logging.info(f"finetuning performed on ucf")
+        logging.info(f"supervised-learning performed on ucf")
         train_loader = get_data_ucf(batch_size=args.batch_size, 
                                     mode='train', 
                                     transform=default_transform(), 
@@ -202,7 +203,7 @@ def main():
                                     num_seq=1, 
                                     downsample=3)
     else:
-        logging.info(f"finetuning performed on hmdb")
+        logging.info(f"supervised-learning performed on hmdb")
         train_loader = get_data_hmdb(batch_size=args.batch_size, 
                                     mode='train', 
                                     transform=default_transform(), 
@@ -222,9 +223,9 @@ def main():
 
     if not args.random:
         resnet.load_state_dict(torch.load(ckpt_path)) # load model
-        logging.info(f"finetuning performed after ssl")
+        logging.info(f"supervised-learning performed after ssl")
     else:
-        logging.info(f"finetuning performed with random weight")
+        logging.info(f"supervised-learning performed with random weight")
         
 
     best_acc = 0
@@ -243,8 +244,8 @@ def main():
         logging.info('Epoch: %s, Train acc: %s' % (i, train_acc))
         logging.info('Epoch: %s, Test acc: %s' % (i, test_acc))
     
-    print('Finetune Acc: %s \n' % best_acc)
-    logging.info('Finetune Acc: %s \n' % best_acc)
+    print('Supervised-learning Acc: %s \n' % best_acc)
+    logging.info('Supervised-learning Acc: %s \n' % best_acc)
 
 
 if __name__ == '__main__':
