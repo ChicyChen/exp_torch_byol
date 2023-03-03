@@ -1,6 +1,6 @@
 import sys
-sys.path.append("/home/siyich/byol-pytorch/byol_pytorch")
-from byol_pytorch import BYOL
+sys.path.append("/home/siyich/byol-pytorch/byol_2d")
+from byol_2d import BYOL
 from knn import *
 
 import torch

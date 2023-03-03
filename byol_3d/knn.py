@@ -107,10 +107,11 @@ class LARS(Optimizer):
 
 
 class KNN():
-    def __init__(self, model, k, device):
+    def __init__(self, model, k, device, input_num=2):
         super(KNN, self).__init__()
         self.k = k
         self.device = device
+        self.input_num = input_num
         self.model = model.to(device)
         self.model.eval()
 
@@ -126,19 +127,22 @@ class KNN():
         label_lst = []
 
         with torch.no_grad():
-            for input_tensor, input_tensor2, label in loader:
+            
+            for data_i in loader:
+                if self.input_num == 2:
+                    input_tensor, input_tensor2, label = data_i
+                else:
+                    input_tensor, label = data_i
                 h = self.model.get_representation(input_tensor.to(self.device))
-                if not test:
-                    h2 = self.model.get_representation(input_tensor2.to(self.device))
-                # print(h.size())
                 features.append(h)
                 x_lst.append(input_tensor)
                 label_lst.append(label)
-                if not test:
-                    features.append(h2)
-                    x_lst.append(input_tensor2)
-                    label_lst.append(label)
-                # print(input_tensor.size(), h.size(), label.size())
+
+                # if not test:
+                #     h2 = self.model.get_representation(input_tensor2.to(self.device))
+                #     features.append(h2)
+                #     x_lst.append(input_tensor2)
+                #     label_lst.append(label)
 
             x_total = torch.stack(x_lst)
             h_total = torch.stack(features)

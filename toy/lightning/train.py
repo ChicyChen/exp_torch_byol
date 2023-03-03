@@ -8,7 +8,7 @@ import torch
 from torchvision import models, transforms
 from torch.utils.data import DataLoader, Dataset
 
-from byol_pytorch import BYOL
+from byol_2d import BYOL
 import pytorch_lightning as pl
 
 # test model, a resnet 50

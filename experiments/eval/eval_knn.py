@@ -27,10 +27,19 @@ from augmentation import *
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', default='0,1', type=str)
 parser.add_argument('--batch_size', default=8, type=int)
-parser.add_argument('--epoch_num', default=160, type=int)
 parser.add_argument('--hmdb', action='store_true')
 parser.add_argument('--random', action='store_true')
+
 parser.add_argument('--k', default=1, type=int)
+parser.add_argument('--knn_input', default=1, type=int)
+
+parser.add_argument('--ckpt_folder', default='/home/siyich/byol-pytorch/checkpoints/3dseq_ucf101_lr0.0001_wd1e-05', type=str)
+parser.add_argument('--epoch_num', default=100, type=int)
+
+parser.add_argument('--num_seq', default=1, type=int)
+parser.add_argument('--seq_len', default=4, type=int)
+parser.add_argument('--downsample', default=4, type=int)
+parser.add_argument('--num_aug', default=1, type=int)
 
 
 def default_transform():
@@ -59,7 +68,7 @@ def test_transform():
 
 
 def perform_knn(model, train_loader, test_loader, k=1):
-    ssl_evaluator = KNN(model=model, k=k, device=cuda)
+    ssl_evaluator = KNN(model=model, k=k, device=cuda, input_num=args.knn_input)
     train_acc, val_acc = ssl_evaluator.fit(train_loader, test_loader)
     print(f"k-nn accuracy k= {ssl_evaluator.k} for train split: {train_acc}")
     print(f"k-nn accuracy k= {ssl_evaluator.k} for val split: {val_acc} \n")
@@ -78,8 +87,8 @@ def main():
     global args
     args = parser.parse_args()
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/toy_ucf101_lr1e-06_wd1e-07'
-    ckpt_path='/home/siyich/byol-pytorch/checkpoints/toy_ucf101_lr1e-06_wd1e-07/resnet_epoch%s.pth.tar' % args.epoch_num
+    ckpt_folder = args.ckpt_folder
+    ckpt_path = os.path.join(ckpt_folder, 'resnet_epoch%s.pth.tar' % args.epoch_num)
 
     if not args.hmdb:
         logging.basicConfig(filename=os.path.join(ckpt_folder, 'ucf_knn.log'), level=logging.INFO)
@@ -117,32 +126,36 @@ def main():
                                     mode='train', 
                                     transform=default_transform(), 
                                     transform2=default_transform(),
-                                    seq_len=8, 
-                                    num_seq=1, 
-                                    downsample=3)
+                                    seq_len=args.seq_len, 
+                                    num_seq=args.num_seq, 
+                                    downsample=args.downsample,
+                                    num_aug=args.num_aug)
         test_loader = get_data_ucf(batch_size=args.batch_size, 
                                     mode='val', 
                                     transform=default_transform(), 
                                     transform2=default_transform(),
-                                    seq_len=8, 
-                                    num_seq=1, 
-                                    downsample=3)
+                                    seq_len=args.seq_len, 
+                                    num_seq=args.num_seq, 
+                                    downsample=args.downsample,
+                                    num_aug=args.num_aug)
     else:
         logging.info(f"k-nn accuracy performed on hmdb \n")
         train_loader = get_data_hmdb(batch_size=args.batch_size, 
                                     mode='train', 
                                     transform=default_transform(), 
                                     transform2=default_transform(),
-                                    seq_len=8, 
-                                    num_seq=1, 
-                                    downsample=3)
+                                    seq_len=args.seq_len, 
+                                    num_seq=args.num_seq, 
+                                    downsample=args.downsample,
+                                    num_aug=args.num_aug)
         test_loader = get_data_hmdb(batch_size=args.batch_size, 
                                     mode='val', 
                                     transform=default_transform(), 
                                     transform2=default_transform(),
-                                    seq_len=8, 
-                                    num_seq=1, 
-                                    downsample=3)
+                                    seq_len=args.seq_len, 
+                                    num_seq=args.num_seq, 
+                                    downsample=args.downsample,
+                                    num_aug=args.num_aug)
 
     # random weight
     if args.random:

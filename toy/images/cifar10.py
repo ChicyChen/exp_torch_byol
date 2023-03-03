@@ -1,8 +1,8 @@
 import os
 import sys
 import argparse
-sys.path.append("/home/siyich/byol-pytorch/byol_pytorch")
-from byol_pytorch import BYOL
+sys.path.append("/home/siyich/byol-pytorch/byol_2d")
+from byol_2d import BYOL
 from knn import *
 
 import numpy as np
@@ -12,7 +12,7 @@ from torchvision import models
 from torchvision import transforms as T
 import torch.nn.functional as F
 
-from torchvision.datasets import CIFAR100
+from torchvision.datasets import CIFAR10
 from torch.utils.data import DataLoader
 
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -31,11 +31,11 @@ parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--batch_size', default=256, type=int)
 
 
-def get_cifar100_dataloader(batch_size, train=True):
+def get_cifar10_dataloader(batch_size, train=True):
     transform = T.Compose([
             T.ToTensor(),          
         ])
-    dataset = CIFAR100(root="./", train=train, download=True, transform=transform)
+    dataset = CIFAR10(root="./", train=train, download=True, transform=transform)
     return DataLoader(dataset=dataset, batch_size=batch_size, num_workers=4, drop_last=True)
 
 def train_one_epoch(model, train_loader, optimizer, train=True):
@@ -71,7 +71,7 @@ def main():
     global args
     args = parser.parse_args()
 
-    ckpt_folder='toy_cifar100_modify'
+    ckpt_folder='toy_cifar10_modify_3'
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -83,7 +83,7 @@ def main():
     global cuda
     cuda = torch.device('cuda')
 
-    resnet = models.resnet50(pretrained=False)
+    resnet = models.resnet18(pretrained=False)
     # modify model
     resnet.conv1 = torch.nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
     resnet.maxpool = torch.nn.Identity()
@@ -93,15 +93,15 @@ def main():
         image_size = 32,
         hidden_layer = 'avgpool',
         projection_size = 256,
-        projection_hidden_size = 4096,
+        projection_hidden_size = 1048,
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
     model = nn.DataParallel(model)
     model = model.to(cuda)
 
-    train_loader = get_cifar100_dataloader(batch_size=args.batch_size, train=True)
-    test_loader = get_cifar100_dataloader(batch_size=args.batch_size, train=False)
+    train_loader = get_cifar10_dataloader(batch_size=args.batch_size, train=True)
+    test_loader = get_cifar10_dataloader(batch_size=args.batch_size, train=False)
     
     train_loss_list = []
     test_loss_list = []

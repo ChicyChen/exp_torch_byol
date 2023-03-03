@@ -1,8 +1,8 @@
 import os
 import sys
 import argparse
-sys.path.append("/home/siyich/byol-pytorch/byol_pytorch")
-from byol_pytorch import BYOL
+sys.path.append("/home/siyich/byol-pytorch/byol_2d")
+from byol_2d import BYOL
 from knn import *
 
 import numpy as np
@@ -28,15 +28,15 @@ parser.add_argument('--epochs', default=100, type=int,
 parser.add_argument('--start-epoch', default=0, type=int,
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
-parser.add_argument('--batch_size', default=64, type=int)
+parser.add_argument('--batch_size', default=256, type=int)
 parser.add_argument('--knn', action='store_true')
 
 
-def get_ImageNet64_dataloader(batch_size, train=True):
+def get_ImageNet32_dataloader(batch_size, train=True):
     transform = T.Compose([
             T.ToTensor(),          
         ])
-    dataset = ImageNet64(root="/home/siyich/byol-pytorch/data/", train=train, transform=transform)
+    dataset = ImageNet32(root="/home/siyich/byol-pytorch/data/", train=train, transform=transform)
     return DataLoader(dataset=dataset, batch_size=batch_size, num_workers=4, drop_last=True)
 
 def train_one_epoch(model, train_loader, optimizer, train=True):
@@ -72,7 +72,7 @@ def main():
     global args
     args = parser.parse_args()
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/toy_imagenet64'
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/toy_imagenet32'
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -91,7 +91,7 @@ def main():
 
     model = BYOL(
         resnet,
-        image_size = 64,
+        image_size = 32,
         hidden_layer = 'avgpool',
         projection_size = 256,
         projection_hidden_size = 4096,
@@ -101,8 +101,8 @@ def main():
     model = nn.DataParallel(model)
     model = model.to(cuda)
 
-    train_loader = get_ImageNet64_dataloader(batch_size=args.batch_size, train=True)
-    test_loader = get_ImageNet64_dataloader(batch_size=args.batch_size, train=False)
+    train_loader = get_ImageNet32_dataloader(batch_size=args.batch_size, train=True)
+    test_loader = get_ImageNet32_dataloader(batch_size=args.batch_size, train=False)
     
     train_loss_list = []
     test_loss_list = []
