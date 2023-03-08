@@ -168,7 +168,8 @@ class BYOL(nn.Module):
         projection_size = 512,
         projection_hidden_size = 4096,
         moving_average_decay = 0.99,
-        use_momentum = True
+        use_momentum = True,
+        asym_loss = False
     ):
         super().__init__()
         self.net = net
@@ -180,6 +181,8 @@ class BYOL(nn.Module):
         self.target_ema_updater = EMA(moving_average_decay)
 
         self.online_predictor = MLP(projection_size, projection_size, projection_hidden_size)
+
+        self.asym_loss = asym_loss
 
         # get device of network and make wrapper same device
         device = get_module_device(net)
@@ -235,7 +238,10 @@ class BYOL(nn.Module):
             target_proj_two.detach_()
 
         loss_one = loss_fn(online_pred_one, target_proj_two.detach())
-        loss_two = loss_fn(online_pred_two, target_proj_one.detach())
-
-        loss = loss_one + loss_two
+        if not self.asym_loss:
+            loss_two = loss_fn(online_pred_two, target_proj_one.detach())
+            loss = loss_one + loss_two
+        else:
+            loss = loss_one * 2
+            
         return loss.mean()

@@ -5,13 +5,13 @@ import torch.nn as nn
 
 
 class Fine_Tune(nn.Module):
-    def __init__(self, model, input_dim=512, class_num=51):
+    def __init__(self, model, input_dim=512, class_num=101, dropout=0.2):
         super(Fine_Tune, self).__init__()
         self.input_dim = input_dim
         self.encoder = model
         self.encoder.eval()
         self.linear_pred = nn.Sequential(
-            nn.Dropout(p=0.2),
+            nn.Dropout(p=dropout),
             nn.Linear(input_dim, class_num)
         )
 

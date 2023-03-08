@@ -42,6 +42,8 @@ parser.add_argument('--seq_len', default=4, type=int)
 parser.add_argument('--downsample', default=4, type=int)
 parser.add_argument('--num_aug', default=1, type=int)
 
+parser.add_argument('--asym_loss', action='store_true')
+
 
 
 def default_transform():
@@ -96,7 +98,7 @@ def train_one_epoch(model, train_loader, optimizer, train=True):
                 model.module.update_moving_average()
             else:
                 pass
-            total_loss += loss.sum().item()
+            total_loss += loss.sum().item() / (args.num_seq-1)
     
     return total_loss/num_batches
 
@@ -110,7 +112,7 @@ def main():
     global args
     args = parser.parse_args()
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/3dseq_ucf101_lr%s_wd%s' % (args.lr, args.wd)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/3dseq_%s_asym%s_ucf101_lr%s_wd%s' % (args.num_seq, args.asym_loss, args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -125,7 +127,7 @@ def main():
     resnet = models.video.r3d_18()
     # modify model
     resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-    resnet.maxpool = torch.nn.Identity()
+    # resnet.maxpool = torch.nn.Identity()
 
     model = BYOL(
         resnet,
@@ -134,6 +136,7 @@ def main():
         hidden_layer = 'avgpool',
         projection_size = 256,
         projection_hidden_size = 4096,
+        asym_loss = args.asym_loss,
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)

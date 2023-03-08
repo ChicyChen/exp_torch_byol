@@ -3,7 +3,7 @@ import sys
 import argparse
 sys.path.append("/home/siyich/byol-pytorch/byol_3d")
 from byol_3d import BYOL
-from knn import *
+from linear_evaluation import Linear_Eval
 
 import numpy as np
 import torch
@@ -22,19 +22,33 @@ import logging
 import matplotlib.pyplot as plt
 
 from augmentation import *
+from torch.optim.lr_scheduler import LinearLR
 
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--epochs', default=30, type=int,
+                    help='number of total epochs to run')
+parser.add_argument('--start-epoch', default=0, type=int,
+                    help='manual epoch number (useful on restarts)')
+
+parser.add_argument('--pretrain_path', default='', type=str)
+parser.add_argument('--pretrain', action='store_true')
+
 parser.add_argument('--gpu', default='0,1', type=str)
 parser.add_argument('--batch_size', default=8, type=int)
+
 parser.add_argument('--hmdb', action='store_true')
 parser.add_argument('--random', action='store_true')
-
-parser.add_argument('--k', default=1, type=int)
-parser.add_argument('--knn_input', default=1, type=int)
+parser.add_argument('--input_dim', default=512, type=int)
+parser.add_argument('--class_num', default=101, type=int)
 
 parser.add_argument('--ckpt_folder', default='/home/siyich/byol-pytorch/checkpoints_bad/3dseq_ucf101_lr0.0001_wd1e-05', type=str)
 parser.add_argument('--epoch_num', default=100, type=int)
+
+parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
+parser.add_argument('--wd', default=0, type=float, help='weight decay')
+
+parser.add_argument('--dropout', default=0.2, type=float)
 
 parser.add_argument('--num_seq', default=1, type=int)
 parser.add_argument('--seq_len', default=4, type=int)
@@ -66,19 +80,56 @@ def test_transform():
     return transform
 
 
+def calc_accuracy(output, target):
+    '''output: (B, N); target: (B)'''
+    target = target.squeeze()
+    _, pred = torch.max(output, 1)
+    return torch.mean((pred == target).float())
 
-def perform_knn(model, train_loader, test_loader, k=1):
-    ssl_evaluator = KNN(model=model, k=k, device=cuda, input_num=args.knn_input)
-    train_acc, val_acc = ssl_evaluator.fit(train_loader, test_loader)
-    print(f"k-nn accuracy k= {ssl_evaluator.k} for train split: {train_acc}")
-    print(f"k-nn accuracy k= {ssl_evaluator.k} for val split: {val_acc} \n")
-    print('-----------------')
-    logging.info(f"k-nn accuracy k= {ssl_evaluator.k} for train split: {train_acc}")
-    logging.info(f"k-nn accuracy k= {ssl_evaluator.k} for val split: {val_acc} \n")
-    logging.info('-----------------')
-    return train_acc, val_acc
 
+def linear_train(predict_model, train_loader, criterion, optimizer):
+    predict_model.train()
+
+    total_loss = 0.
+    total_acc = 0.
+    num_batches = len(train_loader)
+
+    for data in train_loader:
+        images, label = data
+        images = images.to(cuda)
+        label = label.to(cuda).squeeze(1)
+        output = predict_model(images)
+
+        # print(output.size(), label.size())
+
+        loss = criterion(output, label)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        acc = calc_accuracy(output, label)
+        total_loss += loss.sum().item()
+        total_acc += acc.cpu().detach().numpy()
+
+    mean_loss = total_loss/num_batches
+    mean_acc = total_acc/num_batches
+    return mean_loss, mean_acc
+
+
+def linear_eval(predict_model, test_loader):
+    predict_model.eval()
+    acc_list =[]
+    for data in test_loader:
+        images, label = data
+        images = images.to(cuda)
+        label = label.to(cuda)
+        output = predict_model(images)
+        acc = calc_accuracy(output, label)
+        acc_list.append(acc.cpu().detach().numpy())
+    mean_acc = np.mean(acc_list)
+    return mean_acc
     
+
 
 def main():
     torch.manual_seed(233)
@@ -91,12 +142,23 @@ def main():
     ckpt_path = os.path.join(ckpt_folder, 'resnet_epoch%s.pth.tar' % args.epoch_num)
 
     if not args.hmdb:
-        logging.basicConfig(filename=os.path.join(ckpt_folder, 'ucf_knn.log'), level=logging.INFO)
+        args.class_num = 101
+        if args.random:
+            linear_folder = os.path.join(ckpt_folder, 'ucf_linear_epoch0') 
+        else:
+            linear_folder = os.path.join(ckpt_folder, 'ucf_linear_epoch%s' % args.epoch_num)
     else:
-        logging.basicConfig(filename=os.path.join(ckpt_folder, 'hmdb_knn.log'), level=logging.INFO)
+        args.class_num = 51
+        if args.random:
+            linear_folder = os.path.join(ckpt_folder, 'hmdb_linear_epoch0') 
+        else:
+            linear_folder = os.path.join(ckpt_folder, 'hmdb_linear_epoch%s' % args.epoch_num)
+    linear_folder = linear_folder+'_lr%s_wd%s_dr%s' % (args.lr, args.wd, args.dropout)
+    if not os.path.exists(linear_folder):
+        os.makedirs(linear_folder)
+    
+    logging.basicConfig(filename=os.path.join(linear_folder, 'ucf_linear.log'), level=logging.INFO)
     logging.info('Started')
-    if not args.random:
-        logging.info(ckpt_path)
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
     global cuda
@@ -120,8 +182,20 @@ def main():
     model = model.to(cuda)
     model.eval()
 
+    predict_model = Linear_Eval(model.module.online_encoder, args.input_dim, args.class_num, args.dropout)
+    predict_model = nn.DataParallel(predict_model)
+    predict_model = predict_model.to(cuda)
+
+    if args.pretrain:
+        predict_model.load_state_dict(torch.load(args.pretrain_path)) # load model
+        logging.info(args.pretrain_path)
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(predict_model.parameters(), lr=args.lr, weight_decay=args.wd)
+    # scheduler = LinearLR(optimizer, start_factor=0.3, total_iters=10)
+
     if not args.hmdb:
-        logging.info(f"k-nn accuracy performed on ucf \n")
+        logging.info(f"linear evaluation performed on ucf")
         train_loader = get_data_ucf(batch_size=args.batch_size, 
                                     mode='train', 
                                     transform=default_transform(), 
@@ -139,7 +213,7 @@ def main():
                                     downsample=args.downsample,
                                     num_aug=args.num_aug)
     else:
-        logging.info(f"k-nn accuracy performed on hmdb \n")
+        logging.info(f"linear evaluation performed on hmdb")
         train_loader = get_data_hmdb(batch_size=args.batch_size, 
                                     mode='train', 
                                     transform=default_transform(), 
@@ -156,19 +230,40 @@ def main():
                                     num_seq=args.num_seq, 
                                     downsample=args.downsample,
                                     num_aug=args.num_aug)
+    
 
-    # random weight
-    if args.random:
-        logging.info(f"k-nn accuracy performed with random weight\n")
-        perform_knn(model.module.online_encoder, train_loader, test_loader, args.k)
 
-    else:
-        # after training
-        logging.info(f"k-nn accuracy performed after ssl\n")
+    if (not args.random) and (not args.pretrain):
         resnet.load_state_dict(torch.load(ckpt_path)) # load model
-        perform_knn(model.module.online_encoder, train_loader, test_loader, args.k)
+        logging.info(ckpt_path)
+        logging.info(f"linear evaluation performed after ssl")
+    else:
+        pass
+    
+    epoch_list = range(args.start_epoch, args.epochs)
+    best_acc = 0
+    for i in epoch_list:
+        train_loss, train_acc = linear_train(predict_model, train_loader, criterion, optimizer)
+        test_acc = linear_eval(predict_model, test_loader)
+        # scheduler.step()
+        if test_acc > best_acc:
+            best_acc = test_acc
+        
+        print('Epoch: %s, Train loss: %s' % (i, train_loss))
+        print('Epoch: %s, Train acc: %s' % (i, train_acc))
+        print('Epoch: %s, Test acc: %s' % (i, test_acc))
+        logging.info('Epoch: %s, Train loss: %s' % (i, train_loss))
+        logging.info('Epoch: %s, Train acc: %s' % (i, train_acc))
+        logging.info('Epoch: %s, Test acc: %s' % (i, test_acc))
+        
+        if (i+1)%5 == 0:
+            # save your improved network
+            checkpoint_path = os.path.join(
+                linear_folder, 'linear_epoch%s.pth.tar' % str(i+1))
+            torch.save(predict_model.state_dict(), checkpoint_path)
 
-
+    print('Linear Eval Acc: %s \n' % best_acc)
+    logging.info('Linear Eval Acc: %s \n' % best_acc)
 
 
 if __name__ == '__main__':

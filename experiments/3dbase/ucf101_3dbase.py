@@ -37,6 +37,13 @@ parser.add_argument('--knn', action='store_true')
 parser.add_argument('--lr', default=1e-4, type=float, help='learning rate')
 parser.add_argument('--wd', default=1e-5, type=float, help='weight decay')
 
+parser.add_argument('--num_seq', default=1, type=int)
+parser.add_argument('--seq_len', default=4, type=int)
+parser.add_argument('--downsample', default=4, type=int)
+parser.add_argument('--num_aug', default=2, type=int)
+
+parser.add_argument('--backbone', default='r3d18', type=str, help='r3d18, r2118')
+
 
 def default_transform():
     transform = transforms.Compose([
@@ -100,10 +107,15 @@ def main():
     global cuda
     cuda = torch.device('cuda')
 
-    resnet = models.video.r3d_18()
-    # modify model
-    resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-    # resnet.maxpool = torch.nn.Identity()
+    if args.backbone == 'r3d18':
+        resnet = models.video.r3d_18()
+        # modify model
+        resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        # resnet.maxpool = torch.nn.Identity()
+    elif args.backbone == 'r2118':
+        resnet = models.video.r2plus1d_18()
+        # ??resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        # ??resnet.stem[3] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
 
     model = BYOL(
         resnet,
@@ -126,16 +138,18 @@ def main():
                                 mode='train', 
                                 transform=default_transform(), 
                                 transform2=default_transform(),
-                                seq_len=8, 
-                                num_seq=1, 
-                                downsample=8)
+                                seq_len=args.seq_len, 
+                                num_seq=args.num_seq, 
+                                downsample=args.downsample,
+                                num_aug=args.num_aug)
     test_loader = get_data_ucf(batch_size=args.batch_size, 
                                 mode='val',
                                 transform=default_transform(), 
                                 transform2=default_transform(),
-                                seq_len=8, 
-                                num_seq=1, 
-                                downsample=8)
+                                seq_len=args.seq_len, 
+                                num_seq=args.num_seq, 
+                                downsample=args.downsample,
+                                num_aug=args.num_aug)
     
     train_loss_list = []
     test_loss_list = []
