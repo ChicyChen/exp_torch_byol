@@ -1,5 +1,8 @@
 import os
 import sys
+from importlib import reload
+# reload(sys)
+# sys.setdefaultencoding('utf-8')
 import argparse
 sys.path.append("/home/siyich/byol-pytorch/byol_3d")
 from byol_3d import BYOL
@@ -99,6 +102,8 @@ def train_one_epoch(model, train_loader, optimizer, train=True):
             else:
                 pass
             total_loss += loss.sum().item() / (args.num_seq-1)
+        
+        # print("done one batch.")
     
     return total_loss/num_batches
 
