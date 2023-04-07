@@ -14,7 +14,7 @@ from torchvision import models
 from torchvision import transforms as T
 import torch.nn.functional as F
 
-from dataloader_3d import get_data_ucf
+from odedata_3d import get_ode_ucf
 from torch.utils.data import DataLoader
 
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -46,10 +46,10 @@ parser.add_argument('--downsample', default=4, type=int)
 parser.add_argument('--num_aug', default=1, type=int)
 
 parser.add_argument('--asym_loss', action='store_true')
-
 parser.add_argument('--adjoint', action='store_true')
-
-
+parser.add_argument('--ordered', action='store_true') # not fully supported
+parser.add_argument('--closed_loop', action='store_true')
+parser.add_argument('--sequential', action='store_true')
 
 def default_transform():
     transform = transforms.Compose([
@@ -68,7 +68,7 @@ def default_transform():
 
 
 def train_one_epoch(model, train_loader, optimizer, train=True):
-    global have_print
+    # global have_print
 
     if train:
         model.train()
@@ -78,25 +78,70 @@ def train_one_epoch(model, train_loader, optimizer, train=True):
     num_batches = len(train_loader)
 
     for data in train_loader:
-        video, label = data # B, C, T, H, W
+        video, label, idxs = data # B, C, T, H, W
         label = label.to(cuda)
 
-        for i in range(args.num_seq-1):
-            index = i*args.seq_len
-            index2 = (i+1)*args.seq_len
-            index3 = (i+2)*args.seq_len
-            images = video[:, :, index:index2, :, :]
-            images2 = video[:, :, index2:index3, :, :]
+        if not args.sequential:
+            images = video[:, :, :args.seq_len, :, :]
             images = images.to(cuda)
-            images2 = images2.to(cuda)
+            for i in range(args.num_seq-1):
+                # index = i*args.seq_len
+                index2 = (i+1)*args.seq_len
+                index3 = (i+2)*args.seq_len
+                # images = video[:, :, index:index2, :, :]
+                images2 = video[:, :, index2:index3, :, :]
+                # images = images.to(cuda)
+                images2 = images2.to(cuda)
 
-            if not have_print:
-                print(images.size(), images2.size())
-                have_print = True
+                # print(idxs.size())
+                # integration_time_f = torch.tensor([0, i+1], dtype=torch.float32)
+                # integration_time_b = torch.tensor([i+1, 0], dtype=torch.float32)
+                integration_time_f = [0, i+1]
+                integration_time_b = [i+1, 0]
+
+                # if not have_print:
+                #     print(images.size(), images2.size())
+                #     have_print = True
+
+                optimizer.zero_grad()
+                loss = model(images, images2, integration_time_f=integration_time_f, integration_time_b=integration_time_b)
+                if train: # train separately for each step
+                    loss.sum().backward()
+                    optimizer.step()
+                    # EMA update
+                    model.module.update_moving_average()
+                else:
+                    pass
+                total_loss += loss.sum().item() / (args.num_seq-1)
+        
+        else:
+            images = video[:, :, :args.seq_len, :, :]
+            images = images.to(cuda)
+            images2_list = []
+            for i in range(args.num_seq-1):
+                # index = i*args.seq_len
+                index2 = (i+1)*args.seq_len
+                index3 = (i+2)*args.seq_len
+                # images = video[:, :, index:index2, :, :]
+                images2 = video[:, :, index2:index3, :, :]
+                # images = images.to(cuda)
+                images2 = images2.to(cuda)
+                images2_list.append(images2)
+            # integration_time_f = torch.tensor(np.arange(0, args.num_seq), dtype=torch.float32)
+            # integration_time_b = torch.tensor(np.arange(args.num_seq-1, -1, -1), dtype=torch.float32)
+            # integration_time_f = torch.tensor([0, 1], dtype=torch.float32)
+            # integration_time_b = torch.tensor([1, 0], dtype=torch.float32)
+            integration_time_f = np.arange(0, args.num_seq)
+            integration_time_b = np.arange(args.num_seq-1, -1, -1)
+
+            # print(integration_time_f, integration_time_b)
 
             optimizer.zero_grad()
-            loss = model(images, images2)
-            if train:
+            loss = model(images, images2_list, 
+                         integration_time_f=integration_time_f, 
+                         integration_time_b=integration_time_b,
+                         sequential=True)
+            if train: # train separately for each step
                 loss.sum().backward()
                 optimizer.step()
                 # EMA update
@@ -113,13 +158,13 @@ def main():
     torch.manual_seed(233)
     np.random.seed(233)
 
-    global have_print
-    have_print = False
+    # global have_print
+    # have_print = False
 
     global args
     args = parser.parse_args()
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/3dseq_ode_adj%s_%s_asym%s_ucf101_lr%s_wd%s' % (args.adjoint, args.num_seq, args.asym_loss, args.lr, args.wd)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/3dseq_ode_adj%s_%s_asym%s_closed%s_sequential%s_ordered%s_ucf101_lr%s_wd%s' % (args.adjoint, args.num_seq, args.asym_loss, args.closed_loop, args.sequential, args.ordered, args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -138,12 +183,13 @@ def main():
 
     model = BYOL_ODE(
         resnet,
-        clip_size = 8,
+        clip_size = args.seq_len,
         image_size = 128,
         hidden_layer = 'avgpool',
         projection_size = 256,
         projection_hidden_size = 4096,
         asym_loss = args.asym_loss,
+        closed_loop = args.closed_loop,
         adjoint = args.adjoint,
     )
 
@@ -155,22 +201,24 @@ def main():
         pretrain_path = os.path.join(args.pretrain_folder, 'byolode_epoch%s.pth.tar' % args.start_epoch)
         model.load_state_dict(torch.load(pretrain_path)) # load model
 
-    train_loader = get_data_ucf(batch_size=args.batch_size, 
+    train_loader = get_ode_ucf(batch_size=args.batch_size, 
                                 mode='train', 
                                 transform=default_transform(), 
                                 transform2=default_transform(),
                                 seq_len=args.seq_len, 
                                 num_seq=args.num_seq, 
                                 downsample=args.downsample,
-                                num_aug=args.num_aug)
-    test_loader = get_data_ucf(batch_size=args.batch_size, 
+                                num_aug=args.num_aug,
+                                ordered=args.ordered)
+    test_loader = get_ode_ucf(batch_size=args.batch_size, 
                                 mode='val',
                                 transform=default_transform(), 
                                 transform2=default_transform(),
                                 seq_len=args.seq_len, 
                                 num_seq=args.num_seq, 
                                 downsample=args.downsample,
-                                num_aug=args.num_aug)
+                                num_aug=args.num_aug,
+                                ordered=args.ordered)
     
     train_loss_list = []
     test_loss_list = []
@@ -191,7 +239,7 @@ def main():
         logging.info('Epoch: %s, Train loss: %s' % (i, train_loss))
         logging.info('Epoch: %s, Test loss: %s' % (i, test_loss))
 
-        if (i+1)%10 == 0:
+        if (i+1)%10 == 0 or i<10:
             # save your improved network
             checkpoint_path = os.path.join(
                 ckpt_folder, 'resnet_epoch%s.pth.tar' % str(i+1))

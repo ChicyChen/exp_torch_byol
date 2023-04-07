@@ -3,6 +3,7 @@ import sys
 import argparse
 sys.path.append("/home/siyich/byol-pytorch/byol_3d")
 from byol_3d import BYOL
+from byolode_3d import BYOL_ODE
 from knn import *
 
 import numpy as np
@@ -40,6 +41,8 @@ parser.add_argument('--num_seq', default=1, type=int)
 parser.add_argument('--seq_len', default=4, type=int)
 parser.add_argument('--downsample', default=4, type=int)
 parser.add_argument('--num_aug', default=1, type=int)
+
+parser.add_argument('--ode', action='store_true')
 
 
 def default_transform():
@@ -107,14 +110,24 @@ def main():
     resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
     # resnet.maxpool = torch.nn.Identity()
 
-    model = BYOL(
+    if not args.ode:
+        model = BYOL(
+            resnet,
+            clip_size = 8,
+            image_size = 128,
+            hidden_layer = 'avgpool',
+            projection_size = 256,
+            projection_hidden_size = 4096,
+        )
+    else:
+        model = BYOL_ODE(
         resnet,
         clip_size = 8,
         image_size = 128,
         hidden_layer = 'avgpool',
         projection_size = 256,
         projection_hidden_size = 4096,
-    )
+        )
 
     model = nn.DataParallel(model)
     model = model.to(cuda)
