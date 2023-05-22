@@ -45,6 +45,15 @@ def set_requires_grad(model, val):
 
 # loss fn
 
+# def loss_fn(x, y):
+#     loss = nn.MSELoss()
+#     return loss(x, y)
+
+def off_diagonal(x):
+    n, m = x.shape
+    assert n == m
+    return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
+
 def loss_fn(x, y):
     x = F.normalize(x, dim=-1, p=2)
     y = F.normalize(y, dim=-1, p=2)
@@ -163,37 +172,57 @@ class NetWrapper(nn.Module):
 
 
 class LatentODEfunc(nn.Module):
-    def __init__(self, latent_dim=512, nhidden=4096):
+    def __init__(self, latent_dim=512, nhidden=4096, odenorm=None, num_layer=2):
         super(LatentODEfunc, self).__init__()
+        
         self.elu = nn.ELU(inplace=True)
-        self.fc1 = nn.Linear(latent_dim, nhidden)
-        # self.fc2 = nn.Linear(nhidden, nhidden)
-        self.fc2 = nn.Linear(nhidden, latent_dim)
-        # self.nfe = 0
+        
+        if num_layer == 1:
+            self.func = nn.Sequential(
+                nn.Linear(latent_dim, latent_dim),
+                nn.BatchNorm1d(latent_dim)
+            )
+        elif num_layer == 2:
+            self.func = nn.Sequential(
+                nn.Linear(latent_dim, nhidden),
+                nn.BatchNorm1d(nhidden),
+                nn.ReLU(inplace=True),
+                nn.Linear(nhidden, latent_dim),
+                nn.BatchNorm1d(latent_dim)
+            )
+        else:
+            self.func = nn.Sequential(
+                nn.Linear(latent_dim, nhidden),
+                nn.BatchNorm1d(nhidden),
+                nn.ReLU(inplace=True),
+                nn.Linear(nhidden, nhidden),
+                nn.BatchNorm1d(nhidden),
+                nn.ReLU(inplace=True),
+                nn.Linear(nhidden, latent_dim),
+                nn.BatchNorm1d(latent_dim)
+            )
+        
 
     def forward(self, t, x):
-        # self.nfe += 1
-        out = self.fc1(x)
-        out = self.elu(out)
-        out = self.fc2(out)
-        # out = self.elu(out)
-        # out = self.fc3(out)
+        out = self.func(x)
         return out
     
 
 class LatentODEblock(nn.Module):
     def __init__(self, odefunc: nn.Module = LatentODEfunc, solver: str = 'dopri5',
                  latent_dim=512, nhidden=4096,
-                 rtol: float = 1e-4, atol: float = 1e-4, adjoint: bool = False):
+                 rtol: float = 1e-4, atol: float = 1e-4, adjoint: bool = False,
+                 odenorm = None, num_layer=2):
         super().__init__()
-        self.odefunc = odefunc(latent_dim=latent_dim, nhidden=nhidden)
+        self.odefunc = odefunc(latent_dim=latent_dim, nhidden=nhidden, odenorm=odenorm, num_layer=num_layer)
         self.rtol = rtol
         self.atol = atol
         self.solver = solver
         self.use_adjoint = adjoint
         self.ode_method = odeint_adjoint if adjoint else odeint
-        self.integration_time_f = torch.tensor([0, 1], dtype=torch.float32)
-        self.integration_time_b = torch.tensor([1, 0], dtype=torch.float32)
+        self.integration_time_f = torch.tensor([0, 0.1], dtype=torch.float32)
+        self.integration_time_b = torch.tensor([0.1, 0], dtype=torch.float32)
+        self.odenorm = odenorm
 
     def forward(self, x: torch.Tensor, integforward=True, integration_time=None):
         if integration_time is None:
@@ -225,6 +254,14 @@ class BYOL_ODE(nn.Module):
         asym_loss = False,
         closed_loop = False,
         adjoint = False,
+        rtol = 1e-4,
+        atol = 1e-4,
+        odenorm = None,
+        num_layer = 2,
+        solver = 'dopri5',
+        mse_l = 1,
+        std_l = 1,
+        cov_l = 0.1,
     ):
         super().__init__()
         self.net = net
@@ -235,10 +272,17 @@ class BYOL_ODE(nn.Module):
         self.target_encoder = None
         self.target_ema_updater = EMA(moving_average_decay)
 
-        self.online_predictor = LatentODEblock(latent_dim = projection_size, nhidden = projection_hidden_size, adjoint=adjoint)
+        self.online_predictor = LatentODEblock(latent_dim = projection_size, nhidden = projection_hidden_size, 
+                                               adjoint = adjoint, rtol = rtol, atol = atol,
+                                               odenorm = odenorm, num_layer = num_layer,
+                                               solver = solver)
 
         self.asym_loss = asym_loss
         self.closed_loop = closed_loop
+
+        self.mse_l = mse_l
+        self.std_l = std_l
+        self.cov_l = cov_l
 
         # get device of network and make wrapper same device
         device = get_module_device(net)
@@ -261,6 +305,27 @@ class BYOL_ODE(nn.Module):
         assert self.use_momentum, 'you do not need to update the moving average, since you have turned off momentum for the target encoder'
         assert self.target_encoder is not None, 'target encoder has not been created yet'
         update_moving_average(self.target_ema_updater, self.target_encoder, self.online_encoder)
+
+    def loss_fn(self, x, y):
+        (B, D) = x.shape
+        x = F.normalize(x, dim=-1, p=2)
+        y = F.normalize(y, dim=-1, p=2)
+        loss_mse = 2 - 2 * (x * y).sum(dim=-1)
+
+        std_x = torch.sqrt(x.var(dim=0) + 0.0001)
+        std_y = torch.sqrt(y.var(dim=0) + 0.0001)
+        loss_std = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
+
+        cov_x = (x.T @ x) / (B - 1)
+        cov_y = (y.T @ y) / (B - 1)
+        loss_cov = off_diagonal(cov_x).pow_(2).sum().div(D) + off_diagonal(cov_y).pow_(2).sum().div(D)
+
+        loss = (
+            self.mse_l * loss_mse
+            + self.std_l * loss_std
+            + self.cov_l * loss_cov
+        )
+        return loss
 
     def forward(
         self,
@@ -290,7 +355,7 @@ class BYOL_ODE(nn.Module):
             # print(online_pred_one.size())
             # online_pred_one = online_pred_one[-1]
             if self.closed_loop:
-                closed_pred_one = self.online_predictor(online_pred_one, integration_time=integration_time_b)[-1]
+                closed_pred_one = self.online_predictor(online_pred_one, integforward=False, integration_time=integration_time_b)[-1]
 
             if not self.asym_loss:
                 online_proj_two, _ = self.online_encoder(image_two)
@@ -312,15 +377,15 @@ class BYOL_ODE(nn.Module):
             # print(online_pred_one.size(), target_proj_two.size())
             # print(closed_pred_one.size(), target_proj_one.size())
 
-            loss_one = loss_fn(online_pred_one, target_proj_two.detach())
+            loss_one = self.loss_fn(online_pred_one, target_proj_two.detach())
             if self.closed_loop:
-                loss_one += loss_fn(closed_pred_one, target_proj_one.detach())
+                loss_one += self.loss_fn(closed_pred_one, target_proj_one.detach())
                 loss_one = loss_one / 2
 
             if not self.asym_loss: # sym loss, two way prediction
-                loss_two = loss_fn(online_pred_two, target_proj_one.detach())
+                loss_two = self.loss_fn(online_pred_two, target_proj_one.detach())
                 if self.closed_loop:
-                    loss_two += loss_fn(closed_pred_two, target_proj_two.detach())
+                    loss_two += self.loss_fn(closed_pred_two, target_proj_two.detach())
                     loss_two = loss_two / 2
                 loss = loss_one + loss_two
             else:
@@ -349,7 +414,7 @@ class BYOL_ODE(nn.Module):
                     target_proj_prev_list.append(target_proj_first)
                 image_last = x2[-1]
                 online_proj_last, _ = self.online_encoder(image_last)
-                online_pred_prev_list = self.online_predictor(online_proj_last, integration_time=integration_time_b)[1:]
+                online_pred_prev_list = self.online_predictor(online_proj_last, integforward=False, integration_time=integration_time_b)[1:]
                 # print(target_proj_prev_list[0].size())
 
             target_proj_next_list = torch.stack(target_proj_next_list, 0)
@@ -359,16 +424,16 @@ class BYOL_ODE(nn.Module):
             target_proj_prev_list = torch.stack(target_proj_prev_list, 0)
             target_proj_prev_list.detach_()
 
-            loss_one = loss_fn(online_pred_next_list, target_proj_next_list.detach()) # forward prediction
+            loss_one = self.loss_fn(online_pred_next_list, target_proj_next_list.detach()) # forward prediction
             if self.closed_loop:
-                online_pred_next_prev_list = self.online_predictor(online_pred_next_list[-1], integration_time=integration_time_b)[1:]
-                loss_one += loss_fn(online_pred_next_prev_list, target_proj_prev_list.detach())
+                online_pred_next_prev_list = self.online_predictor(online_pred_next_list[-1], integforward=False, integration_time=integration_time_b)[1:]
+                loss_one += self.loss_fn(online_pred_next_prev_list, target_proj_prev_list.detach())
 
             if not self.asym_loss:
-                loss_two = loss_fn(online_pred_prev_list, target_proj_prev_list.detach()) # backward prediction
+                loss_two = self.loss_fn(online_pred_prev_list, target_proj_prev_list.detach()) # backward prediction
                 if self.closed_loop:
                     online_pred_prev_next_list = self.online_predictor(online_pred_prev_list[-1], integration_time=integration_time_f)[1:]
-                    loss_two += loss_fn(online_pred_prev_next_list, target_proj_next_list.detach())
+                    loss_two += self.loss_fn(online_pred_prev_next_list, target_proj_next_list.detach())
 
                 loss = loss_one + loss_two
             else:

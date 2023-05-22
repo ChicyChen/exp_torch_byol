@@ -2,6 +2,8 @@ import os
 import sys
 import argparse
 sys.path.append("/home/siyich/byol-pytorch/byol_3d")
+sys.path.append("/home/siyich/byol-pytorch/evaluation_3d")
+sys.path.append("/home/siyich/byol-pytorch/utils")
 from byol_3d import BYOL
 from finetune import Fine_Tune
 

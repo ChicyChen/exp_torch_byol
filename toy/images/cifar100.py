@@ -35,7 +35,7 @@ def get_cifar100_dataloader(batch_size, train=True):
     transform = T.Compose([
             T.ToTensor(),          
         ])
-    dataset = CIFAR100(root="./", train=train, download=True, transform=transform)
+    dataset = CIFAR100(root="/home/siyich/Datasets/Images/", train=train, download=True, transform=transform)
     return DataLoader(dataset=dataset, batch_size=batch_size, num_workers=4, drop_last=True)
 
 def train_one_epoch(model, train_loader, optimizer, train=True):

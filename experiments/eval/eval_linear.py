@@ -2,6 +2,8 @@ import os
 import sys
 import argparse
 sys.path.append("/home/siyich/byol-pytorch/byol_3d")
+sys.path.append("/home/siyich/byol-pytorch/evaluation_3d")
+sys.path.append("/home/siyich/byol-pytorch/utils")
 from byol_3d import BYOL
 from byolode_3d import BYOL_ODE
 from linear_evaluation import Linear_Eval

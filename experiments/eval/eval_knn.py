@@ -2,6 +2,8 @@ import os
 import sys
 import argparse
 sys.path.append("/home/siyich/byol-pytorch/byol_3d")
+sys.path.append("/home/siyich/byol-pytorch/evaluation_3d")
+sys.path.append("/home/siyich/byol-pytorch/utils")
 from byol_3d import BYOL
 from byolode_3d import BYOL_ODE
 from knn import *
@@ -26,7 +28,7 @@ from augmentation import *
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--gpu', default='0,1', type=str)
+parser.add_argument('--gpu', default='0', type=str)
 parser.add_argument('--batch_size', default=8, type=int)
 parser.add_argument('--hmdb', action='store_true')
 parser.add_argument('--random', action='store_true')
@@ -34,7 +36,7 @@ parser.add_argument('--random', action='store_true')
 parser.add_argument('--k', default=1, type=int)
 parser.add_argument('--knn_input', default=1, type=int)
 
-parser.add_argument('--ckpt_folder', default='/home/siyich/byol-pytorch/checkpoints_bad/3dseq_ucf101_lr0.0001_wd1e-05', type=str)
+parser.add_argument('--ckpt_folder', default='checkpoints/3dbase_ucf101_lr0.0001_wd1e-05', type=str)
 parser.add_argument('--epoch_num', default=100, type=int)
 
 parser.add_argument('--num_seq', default=1, type=int)

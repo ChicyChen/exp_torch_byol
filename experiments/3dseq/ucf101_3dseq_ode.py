@@ -5,6 +5,7 @@ from importlib import reload
 # sys.setdefaultencoding('utf-8')
 import argparse
 sys.path.append("/home/siyich/byol-pytorch/byol_3d")
+sys.path.append("/home/siyich/byol-pytorch/utils")
 from byolode_3d import BYOL_ODE
 
 import numpy as np
@@ -33,6 +34,7 @@ parser.add_argument('--start-epoch', default=0, type=int,
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('--pretrain_folder', default='', type=str)
 parser.add_argument('--pretrain', action='store_true')
+parser.add_argument('--pretrain_other', action='store_true')
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--batch_size', default=16, type=int)
 parser.add_argument('--knn', action='store_true')
@@ -46,10 +48,25 @@ parser.add_argument('--downsample', default=4, type=int)
 parser.add_argument('--num_aug', default=1, type=int)
 
 parser.add_argument('--asym_loss', action='store_true')
-parser.add_argument('--adjoint', action='store_true')
 parser.add_argument('--ordered', action='store_true') # not fully supported
 parser.add_argument('--closed_loop', action='store_true')
 parser.add_argument('--sequential', action='store_true')
+
+parser.add_argument('--adjoint', action='store_true')
+parser.add_argument('--rtol', default=1e-4, type=float, help='rtol of ode solver')
+parser.add_argument('--atol', default=1e-4, type=float, help='atol of ode solver')
+parser.add_argument('--tstep', default=1e-1, type=float)
+# parser.add_argument('--odenorm', action='store_true')
+
+parser.add_argument('--pred_hidden', default=4096, type=int)
+parser.add_argument('--pred_layer', default=2, type=int)
+parser.add_argument('--solver', default='dopri5', type=str)
+
+parser.add_argument('--mse_l', default=1, type=float)
+parser.add_argument('--std_l', default=1, type=float)
+parser.add_argument('--cov_l', default=1e-1, type=float)
+
+
 
 def default_transform():
     transform = transforms.Compose([
@@ -96,8 +113,8 @@ def train_one_epoch(model, train_loader, optimizer, train=True):
                 # print(idxs.size())
                 # integration_time_f = torch.tensor([0, i+1], dtype=torch.float32)
                 # integration_time_b = torch.tensor([i+1, 0], dtype=torch.float32)
-                integration_time_f = [0, i+1]
-                integration_time_b = [i+1, 0]
+                integration_time_f = [0, (i+1)*args.tstep]
+                integration_time_b = [(i+1)*args.tstep, 0]
 
                 # if not have_print:
                 #     print(images.size(), images2.size())
@@ -131,8 +148,8 @@ def train_one_epoch(model, train_loader, optimizer, train=True):
             # integration_time_b = torch.tensor(np.arange(args.num_seq-1, -1, -1), dtype=torch.float32)
             # integration_time_f = torch.tensor([0, 1], dtype=torch.float32)
             # integration_time_b = torch.tensor([1, 0], dtype=torch.float32)
-            integration_time_f = np.arange(0, args.num_seq)
-            integration_time_b = np.arange(args.num_seq-1, -1, -1)
+            integration_time_f = np.arange(0, args.num_seq)*args.tstep
+            integration_time_b = np.arange(args.num_seq-1, -1, -1)*args.tstep
 
             # print(integration_time_f, integration_time_b)
 
@@ -164,7 +181,8 @@ def main():
     global args
     args = parser.parse_args()
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/3dseq_ode_adj%s_%s_asym%s_closed%s_sequential%s_ordered%s_ucf101_lr%s_wd%s' % (args.adjoint, args.num_seq, args.asym_loss, args.closed_loop, args.sequential, args.ordered, args.lr, args.wd)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_reg/t%s_mse%s_std%s_cov%s_solver%s_3dseq_ode_po%s_predln%s_hid%s_adj%s_%s_asym%s_closed%s_sequential%s_ordered%s_ucf101_lr%s_wd%s_rt%s_at%s' % (args.tstep, args.mse_l, args.std_l, args.cov_l, args.solver, args.pretrain_other, args.pred_layer, args.pred_hidden, args.adjoint, args.num_seq, args.asym_loss, 
+    args.closed_loop, args.sequential, args.ordered, args.lr, args.wd, args.rtol, args.atol)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -187,10 +205,17 @@ def main():
         image_size = 128,
         hidden_layer = 'avgpool',
         projection_size = 256,
-        projection_hidden_size = 4096,
+        projection_hidden_size = args.pred_hidden,
         asym_loss = args.asym_loss,
         closed_loop = args.closed_loop,
         adjoint = args.adjoint,
+        rtol = args.rtol,
+        atol = args.atol,
+        odenorm = None,
+        num_layer=args.pred_layer,
+        mse_l = args.mse_l,
+        std_l = args.std_l,
+        cov_l = args.cov_l
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
@@ -200,6 +225,9 @@ def main():
     if args.pretrain:
         pretrain_path = os.path.join(args.pretrain_folder, 'byolode_epoch%s.pth.tar' % args.start_epoch)
         model.load_state_dict(torch.load(pretrain_path)) # load model
+    if args.pretrain_other: # only resnet is pretrained
+        pretrain_path = os.path.join(args.pretrain_folder, 'resnet_epoch%s.pth.tar' % args.start_epoch)
+        resnet.load_state_dict(torch.load(pretrain_path)) # load model
 
     train_loader = get_ode_ucf(batch_size=args.batch_size, 
                                 mode='train', 
@@ -239,7 +267,7 @@ def main():
         logging.info('Epoch: %s, Train loss: %s' % (i, train_loss))
         logging.info('Epoch: %s, Test loss: %s' % (i, test_loss))
 
-        if (i+1)%10 == 0 or i<10:
+        if (i+1)%10 == 0 or i<20:
             # save your improved network
             checkpoint_path = os.path.join(
                 ckpt_folder, 'resnet_epoch%s.pth.tar' % str(i+1))

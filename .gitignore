@@ -140,3 +140,5 @@ toy_cifar*
 ImageNet*
 data/
 checkpoints*
+*.csv
+*.gz

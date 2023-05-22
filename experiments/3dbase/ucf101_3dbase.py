@@ -2,6 +2,7 @@ import os
 import sys
 import argparse
 sys.path.append("/home/siyich/byol-pytorch/byol_3d")
+sys.path.append("/home/siyich/byol-pytorch/utils")
 from byol_3d import BYOL
 
 import numpy as np
@@ -32,7 +33,14 @@ parser.add_argument('--pretrain_folder', default='', type=str)
 parser.add_argument('--pretrain', action='store_true')
 parser.add_argument('--gpu', default='0,1', type=str)
 parser.add_argument('--batch_size', default=16, type=int)
-parser.add_argument('--knn', action='store_true')
+
+parser.add_argument('--asym_loss', action='store_true')
+parser.add_argument('--closed_loop', action='store_true')
+parser.add_argument('--useode', action='store_true')
+parser.add_argument('--adjoint', action='store_true')
+parser.add_argument('--rtol', default=1e-4, type=float, help='rtol of ode solver')
+parser.add_argument('--atol', default=1e-4, type=float, help='atol of ode solver')
+# parser.add_argument('--odenorm', action='store_true')
 
 parser.add_argument('--lr', default=1e-4, type=float, help='learning rate')
 parser.add_argument('--wd', default=1e-5, type=float, help='weight decay')
@@ -95,7 +103,7 @@ def main():
     global args
     args = parser.parse_args()
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/3dbase_ucf101_lr%s_wd%s' % (args.lr, args.wd)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/3dbase_ode%s_closed%s_ucf101_lr%s_wd%s' % (args.useode, args.closed_loop, args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -124,6 +132,13 @@ def main():
         hidden_layer = 'avgpool',
         projection_size = 256,
         projection_hidden_size = 4096,
+        asym_loss = args.asym_loss,
+        closed_loop = args.closed_loop,
+        useode = args.useode,
+        adjoint = args.adjoint,
+        rtol = args.rtol,
+        atol = args.atol,
+        odenorm = None
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
@@ -190,7 +205,6 @@ def main():
     # if not args.no_val:
     plt.plot(epoch_list, test_loss_list, label = 'val')
     plt.title('Train and test loss')
-    # plt.xticks(knn_list, knn_list)
     plt.legend()
     plt.savefig(os.path.join(
         ckpt_folder, 'epoch%s_bs%s_loss.png' % (args.epochs, args.batch_size)))

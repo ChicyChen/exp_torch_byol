@@ -199,7 +199,8 @@ def get_data_ucf(transform=None,
                     dim=150,
                     csv_root='/home/siyich/byol-pytorch/data_video',
                     frame_root='/home/siyich/baselineCPC',
-                    num_aug=2):
+                    num_aug=2,
+                    ddp=False):
     print('Loading data for "%s" ...' % mode)
     dataset = UCF101(mode=mode,
                         transform=transform,
@@ -214,7 +215,11 @@ def get_data_ucf(transform=None,
                         frame_root=frame_root,
                         num_aug=num_aug
                         )
-    sampler = data.RandomSampler(dataset)
+    if not ddp:
+        sampler = data.RandomSampler(dataset)
+    else:
+        sampler = data.distributed.DistributedSampler(dataset)
+
     if mode == 'train':
         data_loader = data.DataLoader(dataset,
                                       batch_size=batch_size,
