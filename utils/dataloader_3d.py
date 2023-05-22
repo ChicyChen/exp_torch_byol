@@ -39,7 +39,7 @@ def get_data_hmdb(transform=None,
                     batch_size=16, 
                     dim=150,
                     csv_root='/home/siyich/byol-pytorch/data_video',
-                    frame_root='/home/siyich/baselineCPC',
+                    frame_root='/home/siyich/Datasets/Videos',
                     num_aug=2):
     print('Loading data for "%s" ...' % mode)
     dataset = HMDB51(mode=mode,
@@ -88,7 +88,7 @@ class HMDB51(data.Dataset):
                     return_label=False,
                     dim=150,
                     csv_root='/home/siyich/byol-pytorch/data_video',
-                    frame_root='/home/siyich/baselineCPC',
+                    frame_root='/home/siyich/Datasets/Videos',
                     num_aug=2
                 ):
         self.mode = mode
@@ -188,19 +188,20 @@ class HMDB51(data.Dataset):
 
 
 def get_data_ucf(transform=None,
-                    transform2=None,
-                    mode='train', 
-                    seq_len=8, 
-                    num_seq=1, 
-                    downsample=8, 
-                    which_split=1, 
-                    return_label=True, 
-                    batch_size=16, 
-                    dim=150,
-                    csv_root='/home/siyich/byol-pytorch/data_video',
-                    frame_root='/home/siyich/baselineCPC',
-                    num_aug=2,
-                    ddp=False):
+                transform2=None,
+                mode='train', 
+                seq_len=8, 
+                num_seq=1, 
+                downsample=8, 
+                which_split=1, 
+                return_label=True, 
+                batch_size=16, 
+                dim=150,
+                csv_root='/home/siyich/byol-pytorch/data_video',
+                frame_root='/home/siyich/Datasets/VideosC',
+                num_aug=2,
+                ddp=False
+                ):
     print('Loading data for "%s" ...' % mode)
     dataset = UCF101(mode=mode,
                         transform=transform,
@@ -252,7 +253,7 @@ class UCF101(data.Dataset):
                 return_label=False,
                 dim=150,
                 csv_root='/home/siyich/byol-pytorch/data_video',
-                frame_root='/home/siyich/baselineCPC',
+                frame_root='/home/siyich/Datasets/Videos',
                 num_aug=2
                 ):
         self.mode = mode
@@ -337,7 +338,7 @@ class UCF101(data.Dataset):
                 t_seq2 = seq
             t_seq2 = torch.stack(t_seq2, 0)
             t_seq2 = t_seq2.view(self.seq_len*self.num_seq, C, H, W)
-            t_seq2=t_seq2.permute(1,0,2,3)
+            t_seq2 = t_seq2.permute(1,0,2,3)
 
             if self.return_label:
                 return t_seq, t_seq2, label
@@ -349,6 +350,195 @@ class UCF101(data.Dataset):
 
     def __len__(self):
         return len(self.video_info)
+    
+
+def get_data_mnist(
+        transform=None,
+        transform2=None,
+        mode='train', 
+        seq_len=8, 
+        num_seq=1, 
+        downsample=8,  
+        return_motion=True, 
+        return_digit=False,
+        batch_size=16, 
+        dim=150,
+        csv_root='/home/siyich/byol-pytorch/data_video',
+        frame_root='/home/siyich/Datasets/Videos/MovingMNIST',
+        num_aug=2,
+        ddp=False
+        ):
+    
+    print('Loading data for "%s" ...' % mode)
+    dataset = Moving_MNIST(mode=mode,
+                            transform=transform, 
+                            transform2=transform2, 
+                            seq_len=seq_len,
+                            num_seq=num_seq,
+                            downsample=downsample,
+                            return_motion=return_motion,
+                            return_digit=return_digit,
+                            dim=dim,
+                            csv_root=csv_root,
+                            frame_root=frame_root,
+                            num_aug=num_aug
+                            )
+    
+    if not ddp:
+        sampler = data.RandomSampler(dataset)
+    else:
+        sampler = data.distributed.DistributedSampler(dataset)
+
+    if mode == 'train':
+        data_loader = data.DataLoader(dataset,
+                                      batch_size=batch_size,
+                                      sampler=sampler,
+                                      shuffle=False,
+                                      #   num_workers=32,
+                                      pin_memory=True,
+                                      drop_last=True)
+    else:
+        data_loader = data.DataLoader(dataset,
+                                      batch_size=batch_size,
+                                      sampler=sampler,
+                                      shuffle=False,
+                                      #   num_workers=32,
+                                      pin_memory=True,
+                                      drop_last=True)
+    print('"%s" dataset size: %d' % (mode, len(dataset)))
+    return data_loader
+
+
+class Moving_MNIST(data.Dataset):
+    def __init__(self,
+                mode='train',
+                transform=None, 
+                transform2=None, 
+                seq_len=8,
+                num_seq=1,
+                downsample=8,
+                return_motion=False,
+                return_digit=False,
+                dim=150,
+                csv_root='/home/siyich/byol-pytorch/data_video',
+                frame_root='/home/siyich/Datasets/Videos/MovingMNIST',
+                num_aug=2
+                ):
+        self.mode = mode
+        self.transform = transform
+        self.transform2 = transform2
+        self.seq_len = seq_len
+        self.num_seq = num_seq
+        self.downsample = downsample
+        self.return_motion = return_motion
+        self.return_digit = return_digit
+        self.dim = dim
+        self.csv_root = csv_root
+        self.frame_root = frame_root
+        self.num_aug = num_aug
+
+        print('Using Moving MNIST data')
+
+        # get motion list
+        motion_list = ["vertical", "horizontal", "circular_clockwise",
+                       "circular_anticlockwise", "zigzag", "tofro"]
+        self.action_dict_encode = {}
+        self.action_dict_decode = {}
+        for id in range(len(motion_list)):
+            self.action_dict_decode[id] = motion_list[id]
+            self.action_dict_encode[motion_list[id]] = id
+
+        if dim == 150:
+            folder_name = 'mnist_150'
+        else:
+            folder_name = 'mnist_240'
+
+        # splits
+        if mode == 'train':
+            split = os.path.join(self.csv_root, folder_name, 'train.csv')
+            video_info = pd.read_csv(split, header=None)
+        elif (mode == 'val') or (mode == 'test'): # use val for test
+            split = os.path.join(self.csv_root, folder_name, 'test.csv')
+            video_info = pd.read_csv(split, header=None)
+        else:
+            raise ValueError('wrong mode')
+        
+        self.video_info = video_info
+        if mode == 'val': self.video_info = self.video_info.sample(frac=0.3)
+
+    def idx_sampler(self, vlen, vpath):
+        '''sample index from a video'''
+        if vlen-self.seq_len*self.num_seq*self.downsample <= 0: raise ValueError('video too short')
+        n = 1
+        start_idx = np.random.choice(range(vlen-self.seq_len*self.num_seq*self.downsample), n)
+        seq_idx = np.arange(self.seq_len*self.num_seq)*self.downsample + start_idx
+        return [seq_idx, vpath]
+
+    def __getitem__(self, index):
+        vlen = 100
+        vpath, digit, motion_type = self.video_info.iloc[index]
+        items = self.idx_sampler(vlen, vpath)
+        if items is None:
+            print(vpath)
+
+        idx_block, vpath = items
+
+        seq = [pil_loader(os.path.join(self.frame_root, str(self.dim), vpath, '{}.jpg'.format(i))) for i in idx_block]
+
+        if self.transform is not None: 
+            t_seq = self.transform(seq) # apply same transform
+        else:
+            t_seq = seq
+
+        (C, H, W) = t_seq[0].size()
+        t_seq = torch.stack(t_seq, 0)
+        t_seq = t_seq.view(self.seq_len*self.num_seq, C, H, W)
+        t_seq=t_seq.permute(1,0,2,3) # C, T, H, W
+
+        if self.num_aug > 1:
+            if self.transform2 is not None:
+                t_seq2 = self.transform2(seq)
+            else:
+                t_seq2 = seq
+            t_seq2 = torch.stack(t_seq2, 0)
+            t_seq2 = t_seq2.view(self.seq_len*self.num_seq, C, H, W)
+            t_seq2 = t_seq2.permute(1,0,2,3)
+
+        if self.return_motion and self.return_digit:
+            motion = torch.LongTensor([self.encode_action(motion_type)])
+            digit = torch.LongTensor([digit])
+            if self.num_aug > 1:
+                return t_seq, t_seq2, motion, digit
+            return t_seq, motion, digit
+        if self.return_motion and not self.return_digit:
+            # print(motion_type)
+            motion = torch.LongTensor([self.encode_action(motion_type)])
+            if self.num_aug > 1:
+                return t_seq, t_seq2, motion
+            return t_seq, motion
+        if not self.return_motion and self.return_digit:
+            digit = torch.LongTensor([digit])
+            if self.num_aug > 1:
+                return t_seq, t_seq2, digit
+            return t_seq, digit
+        
+        if self.num_aug > 1:
+            return t_seq, t_seq2
+        return t_seq
+
+    def __len__(self):
+        return len(self.video_info)
+
+    def encode_action(self, action_name):
+        '''give action name, return category'''
+        return self.action_dict_encode[action_name]
+
+    def decode_action(self, action_code):
+        '''give action code, return action name'''
+        return self.action_dict_decode[action_code]
+
+
+
 
 def test():
     transform = transforms.Compose([
@@ -364,12 +554,17 @@ def test():
     # dataset = UCF101(mode='val')
     # print(len(dataset))
     # val_data = get_data_ucf(transform, transform, 'val')
-    dataset = HMDB51(mode='val')
+
+    # dataset = HMDB51(mode='val')
+    # print(len(dataset))
+    # val_data = get_data_hmdb(transform, transform, 'val')
+
+    dataset = Moving_MNIST(mode='val')
     print(len(dataset))
-    val_data = get_data_hmdb(transform, transform, 'val')
+    val_data = get_data_mnist(transform, transform, 'val')
     i=0
     for data in val_data:
-        images, _, label = data
+        images, _, _ = data
         # print(images, label)
         # print(images.size())
         transform_back = T.ToPILImage()
