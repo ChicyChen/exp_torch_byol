@@ -121,7 +121,7 @@ def main():
     global args
     args = parser.parse_args()
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/3dseq_%s_predln%s_hid%s_asym%s_ucf101_lr%s_wd%s' % (args.num_seq, args.pred_layer, args.pred_hidden, args.asym_loss, args.lr, args.wd)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_ema%s/3dseq_%s_predln%s_hid%s_asym%s_ucf101_lr%s_wd%s' % (args.ema, args.num_seq, args.pred_layer, args.pred_hidden, args.asym_loss, args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -145,6 +145,7 @@ def main():
         hidden_layer = 'avgpool',
         projection_size = 256,
         projection_hidden_size = args.pred_hidden,
+        moving_average_decay = args.ema,
         asym_loss = args.asym_loss,
         num_layer=args.pred_layer
     )

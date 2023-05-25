@@ -39,7 +39,7 @@ def get_ode_ucf(transform=None,
                     batch_size=16, 
                     dim=150,
                     csv_root='/home/siyich/byol-pytorch/data_video',
-                    frame_root='/home/siyich/baselineCPC',
+                    frame_root='/home/siyich/Datasets/Videos',
                     num_aug=2,
                     ordered=True):
     print('Loading data for "%s" ...' % mode)
@@ -90,7 +90,7 @@ class UCF101_ODE(data.Dataset):
                 return_label=False,
                 dim=150,
                 csv_root='/home/siyich/byol-pytorch/data_video',
-                frame_root='/home/siyich/baselineCPC',
+                frame_root='/home/siyich/Datasets/Videos',
                 num_aug=2,
                 ordered=True
                 ):

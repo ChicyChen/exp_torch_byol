@@ -6,7 +6,7 @@ from importlib import reload
 import argparse
 sys.path.append("/home/siyich/byol-pytorch/byol_3d")
 sys.path.append("/home/siyich/byol-pytorch/utils")
-from byolode_3d import BYOL_ODE
+from byolmlp_3d import BYOL_MLP
 
 import numpy as np
 import torch
@@ -52,14 +52,11 @@ parser.add_argument('--ordered', action='store_true') # not fully supported
 parser.add_argument('--closed_loop', action='store_true')
 parser.add_argument('--sequential', action='store_true')
 
-parser.add_argument('--adjoint', action='store_true')
-parser.add_argument('--rtol', default=1e-4, type=float, help='rtol of ode solver')
-parser.add_argument('--atol', default=1e-4, type=float, help='atol of ode solver')
-parser.add_argument('--tstep', default=1.0, type=float)
+
 # parser.add_argument('--odenorm', action='store_true')
 
 parser.add_argument('--pred_hidden', default=4096, type=int)
-parser.add_argument('--pred_layer', default=2, type=int)
+# parser.add_argument('--pred_layer', default=2, type=int)
 parser.add_argument('--solver', default='dopri5', type=str)
 
 parser.add_argument('--mse_l', default=1, type=float)
@@ -68,7 +65,6 @@ parser.add_argument('--cov_l', default=1e-1, type=float)
 
 parser.add_argument('--random', action='store_true')
 
-parser.add_argument('--no_mom', action='store_true')
 
 
 def default_transform():
@@ -113,24 +109,17 @@ def train_one_epoch(model, train_loader, optimizer, train=True):
                 # images = images.to(cuda)
                 images2 = images2.to(cuda)
 
-                # print(idxs.size())
-                # integration_time_f = torch.tensor([0, i+1], dtype=torch.float32)
-                # integration_time_b = torch.tensor([i+1, 0], dtype=torch.float32)
-                integration_time_f = [0, (i+1)*args.tstep]
-                integration_time_b = [(i+1)*args.tstep, 0]
-
                 # if not have_print:
                 #     print(images.size(), images2.size())
                 #     have_print = True
 
                 optimizer.zero_grad()
-                loss = model(images, images2, integration_time_f=integration_time_f, integration_time_b=integration_time_b)
+                loss = model(images, images2)
                 if train: # train separately for each step
                     loss.sum().backward()
                     optimizer.step()
                     # EMA update
-                    if not args.no_mom:
-                        model.module.update_moving_average()
+                    model.module.update_moving_average()
                 else:
                     pass
                 total_loss += loss.sum().item() / (args.num_seq-1)
@@ -148,26 +137,15 @@ def train_one_epoch(model, train_loader, optimizer, train=True):
                 # images = images.to(cuda)
                 images2 = images2.to(cuda)
                 images2_list.append(images2)
-            # integration_time_f = torch.tensor(np.arange(0, args.num_seq), dtype=torch.float32)
-            # integration_time_b = torch.tensor(np.arange(args.num_seq-1, -1, -1), dtype=torch.float32)
-            # integration_time_f = torch.tensor([0, 1], dtype=torch.float32)
-            # integration_time_b = torch.tensor([1, 0], dtype=torch.float32)
-            integration_time_f = np.arange(0, args.num_seq)*args.tstep
-            integration_time_b = np.arange(args.num_seq-1, -1, -1)*args.tstep
-
-            # print(integration_time_f, integration_time_b)
 
             optimizer.zero_grad()
             loss = model(images, images2_list, 
-                         integration_time_f=integration_time_f, 
-                         integration_time_b=integration_time_b,
                          sequential=True)
             if train: # train separately for each step
                 loss.sum().backward()
                 optimizer.step()
                 # EMA update
-                if not args.no_mom: 
-                    model.module.update_moving_average()
+                model.module.update_moving_average()
             else:
                 pass
             total_loss += loss.sum().item() / (args.num_seq-1)
@@ -186,8 +164,8 @@ def main():
     global args
     args = parser.parse_args()
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_ode_ema%s/t%s_mse%s_std%s_cov%s_solver%s_3dseq_ode_po%s_predln%s_hid%s_adj%s_%s_asym%s_closed%s_sequential%s_ordered%s_ucf101_lr%s_wd%s_rt%s_at%s' % (args.ema, args.tstep, args.mse_l, args.std_l, args.cov_l, args.solver, args.pretrain_other, args.pred_layer, args.pred_hidden, args.adjoint, args.num_seq, args.asym_loss, 
-    args.closed_loop, args.sequential, args.ordered, args.lr, args.wd, args.rtol, args.atol)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_mlp_ema%s/mse%s_std%s_cov%s_solver%s_3dseq_ode_po%s_hid%s_%s_asym%s_closed%s_sequential%s_ordered%s_ucf101_lr%s_wd%s' % (args.ema, args.mse_l, args.std_l, args.cov_l, args.solver, args.pretrain_other, args.pred_hidden, args.num_seq, args.asym_loss, 
+    args.closed_loop, args.sequential, args.ordered, args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -204,7 +182,7 @@ def main():
     resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
     # resnet.maxpool = torch.nn.Identity()
 
-    model = BYOL_ODE(
+    model = BYOL_MLP(
         resnet,
         clip_size = args.seq_len,
         image_size = 128,
@@ -214,15 +192,9 @@ def main():
         moving_average_decay = args.ema,
         asym_loss = args.asym_loss,
         closed_loop = args.closed_loop,
-        adjoint = args.adjoint,
-        rtol = args.rtol,
-        atol = args.atol,
-        odenorm = None,
-        num_layer=args.pred_layer,
         mse_l = args.mse_l,
         std_l = args.std_l,
-        cov_l = args.cov_l,
-        use_momentum = not args.no_mom,
+        cov_l = args.cov_l
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)

@@ -15,7 +15,7 @@ from torchvision import models
 from torchvision import transforms as T
 import torch.nn.functional as F
 
-from dataloader_3d import get_data_ucf, get_data_hmdb
+from dataloader_3d import get_data_ucf, get_data_hmdb, get_data_mnist
 from torch.utils.data import DataLoader
 
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -31,7 +31,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', default='0', type=str)
 parser.add_argument('--batch_size', default=8, type=int)
 parser.add_argument('--hmdb', action='store_true')
+parser.add_argument('--mnist', action='store_true')
 parser.add_argument('--random', action='store_true')
+parser.add_argument('--kinetics', action='store_true')
 
 parser.add_argument('--k', default=1, type=int)
 parser.add_argument('--knn_input', default=1, type=int)
@@ -107,9 +109,15 @@ def main():
     global cuda
     cuda = torch.device('cuda')
 
-    resnet = models.video.r3d_18()
-    # modify model
-    resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+    if not args.kinetics:
+        resnet = models.video.r3d_18()
+        # modify model
+        resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+    else:
+        resnet = models.video.r3d_18(pretrained=True)
+        # modify model
+        # resnet.layer4[1].conv2[0] = torch.nn.Conv3d(512, 512, kernel_size=(3, 3, 3), stride=(1, 1, 1), padding=(1, 1, 1), bias=False)
+    
     # resnet.maxpool = torch.nn.Identity()
 
     if not args.ode:
@@ -135,7 +143,7 @@ def main():
     model = model.to(cuda)
     model.eval()
 
-    if not args.hmdb:
+    if not args.hmdb and not args.mnist:
         logging.info(f"k-nn accuracy performed on ucf \n")
         train_loader = get_data_ucf(batch_size=args.batch_size, 
                                     mode='train', 
@@ -153,7 +161,7 @@ def main():
                                     num_seq=args.num_seq, 
                                     downsample=args.downsample,
                                     num_aug=args.num_aug)
-    else:
+    elif args.hmdb:
         logging.info(f"k-nn accuracy performed on hmdb \n")
         train_loader = get_data_hmdb(batch_size=args.batch_size, 
                                     mode='train', 
@@ -171,12 +179,32 @@ def main():
                                     num_seq=args.num_seq, 
                                     downsample=args.downsample,
                                     num_aug=args.num_aug)
+    else:
+        logging.info(f"k-nn accuracy performed on mnist \n")
+        train_loader = get_data_mnist(batch_size=args.batch_size, 
+                                    mode='train', 
+                                    transform=default_transform(), 
+                                    transform2=default_transform(),
+                                    seq_len=args.seq_len, 
+                                    num_seq=args.num_seq, 
+                                    downsample=args.downsample,
+                                    num_aug=args.num_aug)
+        test_loader = get_data_mnist(batch_size=args.batch_size, 
+                                    mode='val', 
+                                    transform=default_transform(), 
+                                    transform2=default_transform(),
+                                    seq_len=args.seq_len, 
+                                    num_seq=args.num_seq, 
+                                    downsample=args.downsample,
+                                    num_aug=args.num_aug)
 
     # random weight
     if args.random:
         logging.info(f"k-nn accuracy performed with random weight\n")
         perform_knn(model.module.online_encoder, train_loader, test_loader, args.k)
-
+    elif args.kinetics:
+        logging.info(f"k-nn accuracy performed with kinetics weight\n")
+        perform_knn(model.module.online_encoder, train_loader, test_loader, args.k)
     else:
         # after training
         logging.info(f"k-nn accuracy performed after ssl\n")

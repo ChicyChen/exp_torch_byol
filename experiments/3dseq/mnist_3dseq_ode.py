@@ -15,7 +15,7 @@ from torchvision import models
 from torchvision import transforms as T
 import torch.nn.functional as F
 
-from dataloader_3d import get_data_ucf
+from dataloader_3d import get_data_mnist
 from torch.utils.data import DataLoader
 
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -37,7 +37,7 @@ parser.add_argument('--pretrain', action='store_true')
 parser.add_argument('--pretrain_other', action='store_true')
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
 parser.add_argument('--batch_size', default=16, type=int)
-parser.add_argument('--ema', default=0.99, type=float, help='EMA')
+parser.add_argument('--knn', action='store_true')
 
 parser.add_argument('--lr', default=1e-4, type=float, help='learning rate')
 parser.add_argument('--wd', default=1e-5, type=float, help='weight decay')
@@ -68,7 +68,6 @@ parser.add_argument('--cov_l', default=1e-1, type=float)
 
 parser.add_argument('--random', action='store_true')
 
-parser.add_argument('--no_mom', action='store_true')
 
 
 def default_transform():
@@ -129,8 +128,7 @@ def train_one_epoch(model, train_loader, optimizer, train=True):
                     loss.sum().backward()
                     optimizer.step()
                     # EMA update
-                    if not args.no_mom:
-                        model.module.update_moving_average()
+                    model.module.update_moving_average()
                 else:
                     pass
                 total_loss += loss.sum().item() / (args.num_seq-1)
@@ -166,8 +164,7 @@ def train_one_epoch(model, train_loader, optimizer, train=True):
                 loss.sum().backward()
                 optimizer.step()
                 # EMA update
-                if not args.no_mom: 
-                    model.module.update_moving_average()
+                model.module.update_moving_average()
             else:
                 pass
             total_loss += loss.sum().item() / (args.num_seq-1)
@@ -186,7 +183,7 @@ def main():
     global args
     args = parser.parse_args()
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_ode_ema%s/t%s_mse%s_std%s_cov%s_solver%s_3dseq_ode_po%s_predln%s_hid%s_adj%s_%s_asym%s_closed%s_sequential%s_ordered%s_ucf101_lr%s_wd%s_rt%s_at%s' % (args.ema, args.tstep, args.mse_l, args.std_l, args.cov_l, args.solver, args.pretrain_other, args.pred_layer, args.pred_hidden, args.adjoint, args.num_seq, args.asym_loss, 
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_mnist/t%s_mse%s_std%s_cov%s_solver%s_3dseq_ode_po%s_predln%s_hid%s_adj%s_%s_asym%s_closed%s_sequential%s_ordered%s_ucf101_lr%s_wd%s_rt%s_at%s' % (args.tstep, args.mse_l, args.std_l, args.cov_l, args.solver, args.pretrain_other, args.pred_layer, args.pred_hidden, args.adjoint, args.num_seq, args.asym_loss, 
     args.closed_loop, args.sequential, args.ordered, args.lr, args.wd, args.rtol, args.atol)
 
     if not os.path.exists(ckpt_folder):
@@ -211,7 +208,6 @@ def main():
         hidden_layer = 'avgpool',
         projection_size = 256,
         projection_hidden_size = args.pred_hidden,
-        moving_average_decay = args.ema,
         asym_loss = args.asym_loss,
         closed_loop = args.closed_loop,
         adjoint = args.adjoint,
@@ -221,8 +217,7 @@ def main():
         num_layer=args.pred_layer,
         mse_l = args.mse_l,
         std_l = args.std_l,
-        cov_l = args.cov_l,
-        use_momentum = not args.no_mom,
+        cov_l = args.cov_l
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
@@ -236,24 +231,22 @@ def main():
         pretrain_path = os.path.join(args.pretrain_folder, 'resnet_epoch%s.pth.tar' % args.start_epoch)
         resnet.load_state_dict(torch.load(pretrain_path)) # load model
 
-    train_loader = get_data_ucf(batch_size=args.batch_size, 
+    train_loader = get_data_mnist(batch_size=args.batch_size, 
                                 mode='train', 
                                 transform=default_transform(), 
                                 transform2=default_transform(),
                                 seq_len=args.seq_len, 
                                 num_seq=args.num_seq, 
                                 downsample=args.downsample,
-                                num_aug=args.num_aug,
-                                random=args.random)
-    test_loader = get_data_ucf(batch_size=args.batch_size, 
+                                num_aug=args.num_aug)
+    test_loader = get_data_mnist(batch_size=args.batch_size, 
                                 mode='val',
                                 transform=default_transform(), 
                                 transform2=default_transform(),
                                 seq_len=args.seq_len, 
                                 num_seq=args.num_seq, 
                                 downsample=args.downsample,
-                                num_aug=args.num_aug,
-                                random=args.random)
+                                num_aug=args.num_aug)
     
     train_loss_list = []
     test_loss_list = []
@@ -294,7 +287,7 @@ def main():
     # if not args.no_val:
     plt.plot(epoch_list, test_loss_list, label = 'val')
     plt.title('Train and test loss')
-
+    # plt.xticks(knn_list, knn_list)
     plt.legend()
     plt.savefig(os.path.join(
         ckpt_folder, 'epoch%s_bs%s_loss.png' % (args.epochs, args.batch_size)))

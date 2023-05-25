@@ -198,9 +198,10 @@ def get_data_ucf(transform=None,
                 batch_size=16, 
                 dim=150,
                 csv_root='/home/siyich/byol-pytorch/data_video',
-                frame_root='/home/siyich/Datasets/VideosC',
+                frame_root='/home/siyich/Datasets/Videos',
                 num_aug=2,
-                ddp=False
+                ddp=False,
+                random=False
                 ):
     print('Loading data for "%s" ...' % mode)
     dataset = UCF101(mode=mode,
@@ -214,7 +215,8 @@ def get_data_ucf(transform=None,
                         dim=dim,
                         csv_root=csv_root,
                         frame_root=frame_root,
-                        num_aug=num_aug
+                        num_aug=num_aug,
+                        random=random
                         )
     if not ddp:
         sampler = data.RandomSampler(dataset)
@@ -254,7 +256,8 @@ class UCF101(data.Dataset):
                 dim=150,
                 csv_root='/home/siyich/byol-pytorch/data_video',
                 frame_root='/home/siyich/Datasets/Videos',
-                num_aug=2
+                num_aug=2,
+                random=False
                 ):
         self.mode = mode
         self.transform = transform
@@ -268,6 +271,7 @@ class UCF101(data.Dataset):
         self.csv_root = csv_root
         self.frame_root = frame_root
         self.num_aug = num_aug
+        self.random = random
 
         if dim == 150:
             folder_name = 'ucf101_150'
@@ -304,9 +308,15 @@ class UCF101(data.Dataset):
     def idx_sampler(self, vlen, vpath):
         '''sample index from a video'''
         if vlen-self.seq_len*self.num_seq*self.downsample <= 0: raise ValueError('video too short')
-        n = 1
-        start_idx = np.random.choice(range(vlen-self.seq_len*self.num_seq*self.downsample), n)
-        seq_idx = np.arange(self.seq_len*self.num_seq)*self.downsample + start_idx
+        if not self.random:
+            n = 1
+            start_idx = np.random.choice(range(vlen-self.seq_len*self.num_seq*self.downsample), n)
+            seq_idx = np.arange(self.seq_len*self.num_seq)*self.downsample + start_idx
+        else:
+            n = self.seq_len*self.num_seq
+            seq_idx = np.random.choice(range(vlen-self.seq_len*self.num_seq*self.downsample), n)
+
+
         return [seq_idx, vpath]
 
 

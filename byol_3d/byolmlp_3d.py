@@ -170,80 +170,10 @@ class NetWrapper(nn.Module):
         projection = projector(representation)
         return projection, representation
 
-
-class LatentODEfunc(nn.Module):
-    def __init__(self, latent_dim=512, nhidden=4096, odenorm=None, num_layer=2):
-        super(LatentODEfunc, self).__init__()
-        
-        self.elu = nn.ELU(inplace=True)
-        
-        if num_layer == 1:
-            self.func = nn.Sequential(
-                nn.Linear(latent_dim, latent_dim),
-                # nn.BatchNorm1d(latent_dim)
-            )
-        elif num_layer == 2:
-            self.func = nn.Sequential(
-                nn.Linear(latent_dim, nhidden),
-                nn.BatchNorm1d(nhidden),
-                # nn.ReLU(inplace=True),
-                nn.GELU(),
-                nn.Linear(nhidden, latent_dim),
-                # nn.BatchNorm1d(latent_dim)
-            )
-        else:
-            self.func = nn.Sequential(
-                nn.Linear(latent_dim, nhidden),
-                nn.BatchNorm1d(nhidden),
-                # nn.ReLU(inplace=True),
-                nn.GELU(),
-                nn.Linear(nhidden, nhidden),
-                nn.BatchNorm1d(nhidden),
-                # nn.ReLU(inplace=True),
-                nn.GELU(),
-                nn.Linear(nhidden, latent_dim),
-                # nn.BatchNorm1d(latent_dim)
-            )
-        
-
-    def forward(self, t, x):
-        out = self.func(x)
-        return out
-    
-
-class LatentODEblock(nn.Module):
-    def __init__(self, odefunc: nn.Module = LatentODEfunc, solver: str = 'dopri5',
-                 latent_dim=512, nhidden=4096,
-                 rtol: float = 1e-4, atol: float = 1e-4, adjoint: bool = False,
-                 odenorm = None, num_layer=2):
-        super().__init__()
-        self.odefunc = odefunc(latent_dim=latent_dim, nhidden=nhidden, odenorm=odenorm, num_layer=num_layer)
-        self.rtol = rtol
-        self.atol = atol
-        self.solver = solver
-        self.use_adjoint = adjoint
-        self.ode_method = odeint_adjoint if adjoint else odeint
-        self.integration_time_f = torch.tensor([0, 0.1], dtype=torch.float32)
-        self.integration_time_b = torch.tensor([0.1, 0], dtype=torch.float32)
-        self.odenorm = odenorm
-
-    def forward(self, x: torch.Tensor, integforward=True, integration_time=None):
-        if integration_time is None:
-            if integforward:
-                integration_time = self.integration_time_f
-            else:
-                integration_time = self.integration_time_b
-        integration_time = integration_time.to(x.device)
-
-        out = self.ode_method(
-            self.odefunc, x, integration_time, rtol=self.rtol,
-            atol=self.atol, method=self.solver)
-        # print(out.size())
-        return out
     
 # main class
 
-class BYOL_ODE(nn.Module):
+class BYOL_MLP(nn.Module):
     def __init__(
         self,
         net,
@@ -256,12 +186,6 @@ class BYOL_ODE(nn.Module):
         use_momentum = True,
         asym_loss = False,
         closed_loop = False,
-        adjoint = False,
-        rtol = 1e-4,
-        atol = 1e-4,
-        odenorm = None,
-        num_layer = 2,
-        solver = 'dopri5',
         mse_l = 1,
         std_l = 1,
         cov_l = 0.1,
@@ -275,10 +199,7 @@ class BYOL_ODE(nn.Module):
         self.target_encoder = None
         self.target_ema_updater = EMA(moving_average_decay)
 
-        self.online_predictor = LatentODEblock(latent_dim = projection_size, nhidden = projection_hidden_size, 
-                                               adjoint = adjoint, rtol = rtol, atol = atol,
-                                               odenorm = odenorm, num_layer = num_layer,
-                                               solver = solver)
+        self.online_predictor = MLP(projection_size, projection_size, projection_hidden_size) # predict dfference instead
 
         self.asym_loss = asym_loss
         self.closed_loop = closed_loop
@@ -336,35 +257,29 @@ class BYOL_ODE(nn.Module):
         x2, # predicted time's input
         return_embedding = False,
         return_projection = True,
-        integration_time_f = None,
-        integration_time_b = None,
         sequential = False
     ):
         assert not (self.training and x.shape[0] == 1), 'you must have greater than 1 sample when training, due to the batchnorm in the projection layer'
 
         if return_embedding:
             return self.online_encoder(x, return_projection = return_projection)
-
-        if integration_time_f is not None:
-            integration_time_f = torch.tensor(integration_time_f, dtype=torch.float32)
-            integration_time_b = torch.tensor(integration_time_b, dtype=torch.float32)
         
         if not sequential:
             image_one, image_two = x, x2
 
             online_proj_one, _ = self.online_encoder(image_one)
-            online_pred_one = self.online_predictor(online_proj_one, integration_time=integration_time_f)[-1]
-            # online_pred_one = self.online_predictor(online_proj_one, integration_time=integration_time_f)
+            online_pred_one = self.online_predictor(online_proj_one) + online_proj_one
+            
             # print(online_pred_one.size())
             # online_pred_one = online_pred_one[-1]
             if self.closed_loop:
-                closed_pred_one = self.online_predictor(online_pred_one, integforward=False, integration_time=integration_time_b)[-1]
+                closed_pred_one = self.online_predictor(online_pred_one) + online_pred_one
 
             if not self.asym_loss:
                 online_proj_two, _ = self.online_encoder(image_two)
-                online_pred_two = self.online_predictor(online_proj_two, integforward=False, integration_time=integration_time_b)[-1]
+                online_pred_two = self.online_predictor(online_proj_two) + online_proj_two
                 if self.closed_loop:
-                    closed_pred_two = self.online_predictor(online_pred_two, integration_time=integration_time_f)[-1]
+                    closed_pred_two = self.online_predictor(online_pred_two) + online_proj_two
 
             # print(image_one.size()) # [20, 3, 256, 256], [B, C, H, W]
             # print(online_proj_one.size()) # [2, 512], [B, projection_size]
@@ -395,10 +310,11 @@ class BYOL_ODE(nn.Module):
                 loss = loss_one * 2
 
         else:
+            # TODO: implement sequential case
             image_one = x
             online_proj_one, _ = self.online_encoder(image_one)
             # print(integration_time_f)
-            online_pred_next_list = self.online_predictor(online_proj_one, integration_time=integration_time_f)[1:]
+            online_pred_next_list = self.online_predictor(online_proj_one) + online_proj_one
             # print(online_proj_one.size(), online_pred_next_list.size())
             target_proj_next_list = []
             with torch.no_grad():
@@ -417,7 +333,7 @@ class BYOL_ODE(nn.Module):
                     target_proj_prev_list.append(target_proj_first)
                 image_last = x2[-1]
                 online_proj_last, _ = self.online_encoder(image_last)
-                online_pred_prev_list = self.online_predictor(online_proj_last, integforward=False, integration_time=integration_time_b)[1:]
+                online_pred_prev_list = self.online_predictor(online_proj_last) + online_proj_last
                 # print(target_proj_prev_list[0].size())
 
             target_proj_next_list = torch.stack(target_proj_next_list, 0)
@@ -429,13 +345,13 @@ class BYOL_ODE(nn.Module):
 
             loss_one = self.loss_fn(online_pred_next_list, target_proj_next_list.detach()) # forward prediction
             if self.closed_loop:
-                online_pred_next_prev_list = self.online_predictor(online_pred_next_list[-1], integforward=False, integration_time=integration_time_b)[1:]
+                online_pred_next_prev_list = self.online_predictor(online_pred_next_list[-1])
                 loss_one += self.loss_fn(online_pred_next_prev_list, target_proj_prev_list.detach())
 
             if not self.asym_loss:
                 loss_two = self.loss_fn(online_pred_prev_list, target_proj_prev_list.detach()) # backward prediction
                 if self.closed_loop:
-                    online_pred_prev_next_list = self.online_predictor(online_pred_prev_list[-1], integration_time=integration_time_f)[1:]
+                    online_pred_prev_next_list = self.online_predictor(online_pred_prev_list[-1])
                     loss_two += self.loss_fn(online_pred_prev_next_list, target_proj_next_list.detach())
 
                 loss = loss_one + loss_two
