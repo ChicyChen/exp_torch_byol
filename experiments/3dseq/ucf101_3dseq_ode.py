@@ -63,13 +63,15 @@ parser.add_argument('--pred_layer', default=2, type=int)
 parser.add_argument('--solver', default='dopri5', type=str)
 
 parser.add_argument('--mse_l', default=1, type=float)
-parser.add_argument('--std_l', default=1, type=float)
-parser.add_argument('--cov_l', default=1e-1, type=float)
+parser.add_argument('--std_l', default=0, type=float)
+parser.add_argument('--cov_l', default=0, type=float)
 
-parser.add_argument('--random', action='store_true')
-
+parser.add_argument('--random', action='store_true', help='whether use random data')
 parser.add_argument('--no_mom', action='store_true')
-
+parser.add_argument('--freeze_backbone', action='store_true', help='whether freeze backbone')
+parser.add_argument('--freeze_backbone_path', default='', type=str)
+parser.add_argument('--no_projector', action='store_true')
+parser.add_argument('--use_simsiam_mlp', action='store_true')
 
 def default_transform():
     transform = transforms.Compose([
@@ -186,8 +188,11 @@ def main():
     global args
     args = parser.parse_args()
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_ode_ema%s/t%s_mse%s_std%s_cov%s_solver%s_3dseq_ode_po%s_predln%s_hid%s_adj%s_%s_asym%s_closed%s_sequential%s_ordered%s_ucf101_lr%s_wd%s_rt%s_at%s' % (args.ema, args.tstep, args.mse_l, args.std_l, args.cov_l, args.solver, args.pretrain_other, args.pred_layer, args.pred_hidden, args.adjoint, args.num_seq, args.asym_loss, 
-    args.closed_loop, args.sequential, args.ordered, args.lr, args.wd, args.rtol, args.atol)
+    # ckpt_folder='/home/siyich/byol-pytorch/checkpoints_ode_ema%s/t%s_mse%s_std%s_cov%s_solver%s_3dseq_ode_po%s_predln%s_hid%s_adj%s_%s_asym%s_closed%s_sequential%s_ordered%s_ucf101_lr%s_wd%s_rt%s_at%s' % (args.ema, args.tstep, args.mse_l, args.std_l, args.cov_l, args.solver, args.pretrain_other, args.pred_layer, args.pred_hidden, args.adjoint, args.num_seq, args.asym_loss, 
+    # args.closed_loop, args.sequential, args.ordered, args.lr, args.wd, args.rtol, args.atol)
+
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_ode_freeze%s_ema%s_pj%s/ucf101_t%s_mse%s_std%s_cov%s_predln%s_hid%s_ns%s' \
+    % (args.freeze_backbone, args.ema, not args.no_projector, args.tstep, args.mse_l, args.std_l, args.cov_l, args.pred_layer, args.pred_hidden, args.num_seq)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -223,9 +228,11 @@ def main():
         std_l = args.std_l,
         cov_l = args.cov_l,
         use_momentum = not args.no_mom,
+        use_projector = not args.no_projector,
+        use_simsiam_mlp = args.use_simsiam_mlp
     )
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+    
     model = nn.DataParallel(model)
     model = model.to(cuda)
 
@@ -235,6 +242,21 @@ def main():
     if args.pretrain_other: # only resnet is pretrained
         pretrain_path = os.path.join(args.pretrain_folder, 'resnet_epoch%s.pth.tar' % args.start_epoch)
         resnet.load_state_dict(torch.load(pretrain_path)) # load model
+
+    if args.freeze_backbone:
+        if args.freeze_backbone_path is not None:
+            backbone_path = args.freeze_backbone_path
+            resnet.load_state_dict(torch.load(backbone_path)) # load resnet
+        for param in resnet.parameters():
+            param.requires_grad = False
+
+    print('\n===========Check Grad============')
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print(name, param.requires_grad)
+    print('=================================\n')
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     train_loader = get_data_ucf(batch_size=args.batch_size, 
                                 mode='train', 

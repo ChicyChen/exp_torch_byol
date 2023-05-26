@@ -104,7 +104,7 @@ def SimSiamMLP(dim, projection_size, hidden_size=4096):
 # and pipe it into the projecter and predictor nets
 
 class NetWrapper(nn.Module):
-    def __init__(self, net, projection_size, projection_hidden_size, layer = -2, use_simsiam_mlp = False):
+    def __init__(self, net, projection_size, projection_hidden_size, layer = -2, use_simsiam_mlp = False, use_projector = True):
         super().__init__()
         self.net = net
         self.layer = layer
@@ -114,6 +114,7 @@ class NetWrapper(nn.Module):
         self.projection_hidden_size = projection_hidden_size
 
         self.use_simsiam_mlp = use_simsiam_mlp
+        self.use_projector = use_projector
 
         self.hidden = {}
         self.hook_registered = False
@@ -163,7 +164,7 @@ class NetWrapper(nn.Module):
     def forward(self, x, return_projection = True):
         representation = self.get_representation(x)
 
-        if not return_projection:
+        if not return_projection or not self.use_projector:
             return representation
 
         projector = self._get_projector(representation)
@@ -265,15 +266,22 @@ class BYOL_ODE(nn.Module):
         mse_l = 1,
         std_l = 1,
         cov_l = 0.1,
+        use_projector = True,
+        use_simsiam_mlp = False,
+        latent_size = 512
     ):
         super().__init__()
         self.net = net
 
-        self.online_encoder = NetWrapper(net, projection_size, projection_hidden_size, layer=hidden_layer, use_simsiam_mlp=not use_momentum)
+        self.online_encoder = NetWrapper(net, projection_size, projection_hidden_size, layer=hidden_layer, use_simsiam_mlp = use_simsiam_mlp, use_projector = use_projector)
 
         self.use_momentum = use_momentum
         self.target_encoder = None
         self.target_ema_updater = EMA(moving_average_decay)
+        self.use_projector = use_projector
+
+        if not use_projector:
+            projection_size = latent_size 
 
         self.online_predictor = LatentODEblock(latent_dim = projection_size, nhidden = projection_hidden_size, 
                                                adjoint = adjoint, rtol = rtol, atol = atol,
@@ -352,7 +360,10 @@ class BYOL_ODE(nn.Module):
         if not sequential:
             image_one, image_two = x, x2
 
-            online_proj_one, _ = self.online_encoder(image_one)
+            if self.use_projector:
+                online_proj_one, _ = self.online_encoder(image_one)
+            else:
+                online_proj_one = self.online_encoder(image_one)
             online_pred_one = self.online_predictor(online_proj_one, integration_time=integration_time_f)[-1]
             # online_pred_one = self.online_predictor(online_proj_one, integration_time=integration_time_f)
             # print(online_pred_one.size())
@@ -361,7 +372,10 @@ class BYOL_ODE(nn.Module):
                 closed_pred_one = self.online_predictor(online_pred_one, integforward=False, integration_time=integration_time_b)[-1]
 
             if not self.asym_loss:
-                online_proj_two, _ = self.online_encoder(image_two)
+                if self.use_projector:
+                    online_proj_two, _ = self.online_encoder(image_two)
+                else:
+                    online_proj_two = self.online_encoder(image_two)
                 online_pred_two = self.online_predictor(online_proj_two, integforward=False, integration_time=integration_time_b)[-1]
                 if self.closed_loop:
                     closed_pred_two = self.online_predictor(online_pred_two, integration_time=integration_time_f)[-1]
@@ -372,10 +386,18 @@ class BYOL_ODE(nn.Module):
 
             with torch.no_grad():
                 target_encoder = self._get_target_encoder() if self.use_momentum else self.online_encoder
-                target_proj_two, _ = target_encoder(image_two)
-                target_proj_two.detach_()
-                target_proj_one, _ = target_encoder(image_one)
-                target_proj_one.detach_()
+                if self.use_projector:
+                    target_proj_two, _ = target_encoder(image_two)
+                else:
+                    target_proj_two = target_encoder(image_two)
+                # target_proj_two.detach_() # in place, detach the tensor from the graph
+                target_proj_two.detach()
+                if self.use_projector:
+                    target_proj_one, _ = target_encoder(image_one)
+                else:
+                    target_proj_one = target_encoder(image_one)
+                # target_proj_one.detach_()
+                target_proj_one.detach()
 
             # print(online_pred_one.size(), target_proj_two.size())
             # print(closed_pred_one.size(), target_proj_one.size())
@@ -404,7 +426,10 @@ class BYOL_ODE(nn.Module):
             with torch.no_grad():
                 target_encoder = self._get_target_encoder() if self.use_momentum else self.online_encoder
                 for image_two in x2:
-                    target_proj_two, _ = target_encoder(image_two)
+                    if self.use_projector:
+                        target_proj_two, _ = target_encoder(image_two)
+                    else:
+                        target_proj_two = target_encoder(image_two)
                     target_proj_next_list.append(target_proj_two)
                 # print(len(target_proj_next_list))
                 # target_proj_first = target_encoder(image_one)
@@ -413,7 +438,10 @@ class BYOL_ODE(nn.Module):
                 target_proj_prev_list = target_proj_next_list[::-1][1:]
                 with torch.no_grad():
                     target_encoder = self._get_target_encoder() if self.use_momentum else self.online_encoder
-                    target_proj_first, _ = target_encoder(image_one)
+                    if self.use_projector:
+                        target_proj_first, _ = target_encoder(image_one)
+                    else:
+                        target_proj_first = target_encoder(image_one)
                     target_proj_prev_list.append(target_proj_first)
                 image_last = x2[-1]
                 online_proj_last, _ = self.online_encoder(image_last)
@@ -421,11 +449,13 @@ class BYOL_ODE(nn.Module):
                 # print(target_proj_prev_list[0].size())
 
             target_proj_next_list = torch.stack(target_proj_next_list, 0)
-            target_proj_next_list.detach_()
+            # target_proj_next_list.detach_()
+            target_proj_next_list.detach()
 
             # print(target_proj_prev_list[2])
             target_proj_prev_list = torch.stack(target_proj_prev_list, 0)
-            target_proj_prev_list.detach_()
+            # target_proj_prev_list.detach_()
+            target_proj_prev_list.detac()
 
             loss_one = self.loss_fn(online_pred_next_list, target_proj_next_list.detach()) # forward prediction
             if self.closed_loop:

@@ -51,6 +51,8 @@ parser.add_argument('--asym_loss', action='store_true')
 parser.add_argument('--pred_hidden', default=4096, type=int)
 parser.add_argument('--pred_layer', default=2, type=int)
 
+parser.add_argument('--no_projector', action='store_true')
+
 
 
 def default_transform():

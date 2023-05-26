@@ -106,7 +106,7 @@ def SimSiamMLP(dim, projection_size, hidden_size=4096):
 # and pipe it into the projecter and predictor nets
 
 class NetWrapper(nn.Module):
-    def __init__(self, net, projection_size, projection_hidden_size, layer = -2, use_simsiam_mlp = False, num_layer = 2):
+    def __init__(self, net, projection_size, projection_hidden_size, layer = -2, use_simsiam_mlp = False, num_layer = 2, use_projector = True):
         super().__init__()
         self.net = net
         self.layer = layer
@@ -117,6 +117,7 @@ class NetWrapper(nn.Module):
         self.num_layer = num_layer
 
         self.use_simsiam_mlp = use_simsiam_mlp
+        self.use_projector = use_projector
 
         self.hidden = {}
         self.hook_registered = False
@@ -166,7 +167,7 @@ class NetWrapper(nn.Module):
     def forward(self, x, return_projection = True):
         representation = self.get_representation(x)
 
-        if not return_projection:
+        if not return_projection or not self.use_projector:
             return representation
 
         projector = self._get_projector(representation)
@@ -245,18 +246,20 @@ class BYOL(nn.Module):
         rtol = 1e-4,
         atol = 1e-4,
         odenorm = None,
-        num_layer = 2
+        num_layer = 2,
+        use_projector = True
     ):
         super().__init__()
         self.net = net
 
-        self.online_encoder = NetWrapper(net, projection_size, projection_hidden_size, layer=hidden_layer, use_simsiam_mlp=not use_momentum, num_layer=num_layer)
+        self.online_encoder = NetWrapper(net, projection_size, projection_hidden_size, layer=hidden_layer, use_simsiam_mlp=not use_momentum, num_layer=num_layer, use_projector = use_projector)
 
         self.use_momentum = use_momentum
         self.target_encoder = None
         self.target_ema_updater = EMA(moving_average_decay)
 
         self.useode = useode
+
 
         if not useode:
             self.online_predictor = MLP(projection_size, projection_size, projection_hidden_size)

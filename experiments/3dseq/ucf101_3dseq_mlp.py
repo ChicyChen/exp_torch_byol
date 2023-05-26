@@ -64,6 +64,7 @@ parser.add_argument('--std_l', default=1, type=float)
 parser.add_argument('--cov_l', default=1e-1, type=float)
 
 parser.add_argument('--random', action='store_true')
+parser.add_argument('--no_projector', action='store_true')
 
 
 
