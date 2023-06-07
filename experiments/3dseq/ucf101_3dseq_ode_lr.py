@@ -68,8 +68,6 @@ parser.add_argument('--cov_l', default=0, type=float)
 
 parser.add_argument('--random', action='store_true', help='whether use random data')
 parser.add_argument('--no_mom', action='store_true')
-parser.add_argument('--freeze_backbone', action='store_true', help='whether freeze backbone')
-parser.add_argument('--freeze_backbone_path', default='', type=str)
 parser.add_argument('--no_projector', action='store_true')
 parser.add_argument('--use_simsiam_mlp', action='store_true')
 parser.add_argument('--ode_lr_frac', default = 1.0, type=float )
@@ -194,8 +192,8 @@ def main():
     if args.no_mom:
         args.ema = 1.0
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_ode_freeze%s_ema%s_pj%s_simpj%s/ucf101_t%s_mse%s_std%s_cov%s_predln%s_hid%s_ns%s_lr%s_wd%s' \
-    % (args.freeze_backbone, args.ema, not args.no_projector, args.use_simsiam_mlp, args.tstep, args.mse_l, args.std_l, args.cov_l, args.pred_layer, args.pred_hidden, args.num_seq, args.lr, args.wd)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_ode_lr%s_ema%s_pj%s/ucf101_t%s_mse%s_std%s_cov%s_predln%s_hid%s_ns%s_lr%s_wd%s' \
+    % (args.ode_lr_frac, args.ema, not args.no_projector, args.tstep, args.mse_l, args.std_l, args.cov_l, args.pred_layer, args.pred_hidden, args.num_seq, args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -246,12 +244,21 @@ def main():
         pretrain_path = os.path.join(args.pretrain_folder, 'resnet_epoch%s.pth.tar' % args.start_epoch)
         resnet.load_state_dict(torch.load(pretrain_path)) # load model
 
-    if args.freeze_backbone:
-        if args.freeze_backbone_path != '':
-            backbone_path = args.freeze_backbone_path
-            resnet.load_state_dict(torch.load(backbone_path)) # load resnet
-        for param in resnet.parameters():
-            param.requires_grad = False
+    # if args.freeze_backbone:
+    #     if args.freeze_backbone_path != '':
+    #         backbone_path = args.freeze_backbone_path
+    #         resnet.load_state_dict(torch.load(backbone_path)) # load resnet
+    #     for param in resnet.parameters():
+    #         param.requires_grad = False
+
+    params = []
+    for name, param in model.named_parameters():
+        if 'predict' in name:
+            params.append({'params': param, 'lr': args.lr * args.ode_lr_frac})
+        else:
+            params.append({'params': param})
+    print(len(params))
+
 
     print('\n===========Check Grad============')
     for name, param in model.named_parameters():
@@ -259,7 +266,7 @@ def main():
             print(name, param.requires_grad)
     print('=================================\n')
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+    optimizer = torch.optim.Adam(params, lr=args.lr, weight_decay=args.wd)
 
     train_loader = get_data_ucf(batch_size=args.batch_size, 
                                 mode='train', 
