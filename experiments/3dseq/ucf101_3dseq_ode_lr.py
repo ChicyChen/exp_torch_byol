@@ -70,7 +70,7 @@ parser.add_argument('--random', action='store_true', help='whether use random da
 parser.add_argument('--no_mom', action='store_true')
 parser.add_argument('--no_projector', action='store_true')
 parser.add_argument('--use_simsiam_mlp', action='store_true')
-parser.add_argument('--ode_lr_frac', default = 1.0, type=float )
+parser.add_argument('--ode_lr_frac', default = 1.0, type=float)
 
 def default_transform():
     transform = transforms.Compose([

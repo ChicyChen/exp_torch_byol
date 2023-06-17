@@ -72,7 +72,9 @@ parser.add_argument('--freeze_backbone', action='store_true', help='whether free
 parser.add_argument('--freeze_backbone_path', default='', type=str)
 parser.add_argument('--no_projector', action='store_true')
 parser.add_argument('--use_simsiam_mlp', action='store_true')
-parser.add_argument('--ode_lr_frac', default = 1.0, type=float )
+parser.add_argument('--ode_lr_frac', default = 1.0, type=float)
+
+parser.add_argument('--before_pool', action='store_true')
 
 def default_transform():
     transform = transforms.Compose([
@@ -194,8 +196,8 @@ def main():
     if args.no_mom:
         args.ema = 1.0
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_ode_freeze%s_ema%s_pj%s_simpj%s/ucf101_t%s_mse%s_std%s_cov%s_predln%s_hid%s_ns%s_lr%s_wd%s' \
-    % (args.freeze_backbone, args.ema, not args.no_projector, args.use_simsiam_mlp, args.tstep, args.mse_l, args.std_l, args.cov_l, args.pred_layer, args.pred_hidden, args.num_seq, args.lr, args.wd)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_ode_bp%s_freeze%s_ema%s_pj%s_simpj%s/ucf101_t%s_mse%s_std%s_cov%s_predln%s_hid%s_ns%s_lr%s_wd%s' \
+    % (args.before_pool, args.freeze_backbone, args.ema, not args.no_projector, args.use_simsiam_mlp, args.tstep, args.mse_l, args.std_l, args.cov_l, args.pred_layer, args.pred_hidden, args.num_seq, args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -210,7 +212,9 @@ def main():
     resnet = models.video.r3d_18()
     # modify model
     resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-    # resnet.maxpool = torch.nn.Identity()
+    if args.before_pool:
+        resnet.avgpool = torch.nn.AdaptiveAvgPool3d((3, 3, 3))
+        resnet.fc = torch.nn.Identity()
 
     model = BYOL_ODE(
         resnet,

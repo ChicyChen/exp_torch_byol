@@ -52,6 +52,8 @@ parser.add_argument('--num_aug', default=2, type=int)
 
 parser.add_argument('--backbone', default='r3d18', type=str, help='r3d18, r2118')
 
+parser.add_argument('--head_lr_frac', default = 1.0, type=float)
+
 
 def default_transform():
     transform = transforms.Compose([
@@ -103,7 +105,7 @@ def main():
     global args
     args = parser.parse_args()
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints/3dbase_ode%s_closed%s_ucf101_lr%s_wd%s' % (args.useode, args.closed_loop, args.lr, args.wd)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_lr%s/3dbase_ode%s_closed%s_ucf101_lr%s_wd%s' % (args.head_lr_frac, args.useode, args.closed_loop, args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -141,7 +143,15 @@ def main():
         odenorm = None
     )
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+    params = []
+    for name, param in model.named_parameters():
+        if 'predict' in name:
+            params.append({'params': param, 'lr': args.lr * args.head_lr_frac})
+        else:
+            params.append({'params': param})
+    print(len(params))
+
+    optimizer = torch.optim.Adam(params, lr=args.lr, weight_decay=args.wd)
     model = nn.DataParallel(model)
     model = model.to(cuda)
 
