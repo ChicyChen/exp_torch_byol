@@ -247,12 +247,13 @@ class BYOL(nn.Module):
         atol = 1e-4,
         odenorm = None,
         num_layer = 2,
-        use_projector = True
+        use_projector = True,
+        use_simsiam_mlp = False,
     ):
         super().__init__()
         self.net = net
 
-        self.online_encoder = NetWrapper(net, projection_size, projection_hidden_size, layer=hidden_layer, use_simsiam_mlp=not use_momentum, num_layer=num_layer, use_projector = use_projector)
+        self.online_encoder = NetWrapper(net, projection_size, projection_hidden_size, layer=hidden_layer, use_simsiam_mlp=use_simsiam_mlp, num_layer=num_layer, use_projector = use_projector)
 
         self.use_momentum = use_momentum
         self.target_encoder = None

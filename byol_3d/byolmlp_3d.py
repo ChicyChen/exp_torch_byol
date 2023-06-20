@@ -12,6 +12,7 @@ from torchdiffeq import odeint_adjoint
 from torchdiffeq import odeint
 
 import numpy as np
+from operator import add 
 
 # helper functions
 
@@ -79,7 +80,15 @@ def update_moving_average(ema_updater, ma_model, current_model):
 
 # MLP class for projector and predictor
 
-def MLP(dim, projection_size, hidden_size=4096):
+def MLP(dim, projection_size, hidden_size=4096, bn_last=False):
+    if bn_last:
+        return nn.Sequential(
+            nn.Linear(dim, hidden_size),
+            nn.BatchNorm1d(hidden_size),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_size, projection_size),
+            nn.BatchNorm1d(projection_size)
+        )
     return nn.Sequential(
         nn.Linear(dim, hidden_size),
         nn.BatchNorm1d(hidden_size),
@@ -87,7 +96,7 @@ def MLP(dim, projection_size, hidden_size=4096):
         nn.Linear(hidden_size, projection_size)
     )
 
-def SimSiamMLP(dim, projection_size, hidden_size=4096):
+def SimSiamMLP(dim, projection_size, hidden_size=4096, bn_last=True):
     return nn.Sequential(
         nn.Linear(dim, hidden_size, bias=False),
         nn.BatchNorm1d(hidden_size),
@@ -104,7 +113,7 @@ def SimSiamMLP(dim, projection_size, hidden_size=4096):
 # and pipe it into the projecter and predictor nets
 
 class NetWrapper(nn.Module):
-    def __init__(self, net, projection_size, projection_hidden_size, layer = -2, use_simsiam_mlp = False, use_projector = True):
+    def __init__(self, net, projection_size, projection_hidden_size, layer = -2, use_simsiam_mlp = False, use_projector = True, bn_last = False):
         super().__init__()
         self.net = net
         self.layer = layer
@@ -115,6 +124,7 @@ class NetWrapper(nn.Module):
 
         self.use_simsiam_mlp = use_simsiam_mlp
         self.use_projector = use_projector
+        self.bn_last = bn_last
 
         self.hidden = {}
         self.hook_registered = False
@@ -142,7 +152,7 @@ class NetWrapper(nn.Module):
     def _get_projector(self, hidden):
         _, dim = hidden.shape
         create_mlp_fn = MLP if not self.use_simsiam_mlp else SimSiamMLP
-        projector = create_mlp_fn(dim, self.projection_size, self.projection_hidden_size)
+        projector = create_mlp_fn(dim, self.projection_size, self.projection_hidden_size, self.bn_last)
         return projector.to(hidden)
 
     def get_representation(self, x):
@@ -191,18 +201,20 @@ class BYOL_MLP(nn.Module):
         std_l = 1,
         cov_l = 0.1,
         use_projector = True,
-        use_simsiam_mlp = False
+        use_simsiam_mlp = False,
+        bn_last = False,
+        pred_bn_last = False
     ):
         super().__init__()
         self.net = net
 
-        self.online_encoder = NetWrapper(net, projection_size, projection_hidden_size, layer=hidden_layer, use_simsiam_mlp = use_simsiam_mlp, use_projector = use_projector)
+        self.online_encoder = NetWrapper(net, projection_size, projection_hidden_size, layer=hidden_layer, use_simsiam_mlp = use_simsiam_mlp, use_projector = use_projector, bn_last = bn_last)
 
         self.use_momentum = use_momentum
         self.target_encoder = None
         self.target_ema_updater = EMA(moving_average_decay)
 
-        self.online_predictor = MLP(projection_size, projection_size, projection_hidden_size) # predict dfference instead
+        self.online_predictor = MLP(projection_size, projection_size, projection_hidden_size, pred_bn_last) # predict dfference instead
 
         self.asym_loss = asym_loss
         self.closed_loop = closed_loop
@@ -238,21 +250,23 @@ class BYOL_MLP(nn.Module):
         x = F.normalize(x, dim=-1, p=2)
         y = F.normalize(y, dim=-1, p=2)
         loss_mse = 2 - 2 * (x * y).sum(dim=-1)
+        loss_mse = self.mse_l * loss_mse
 
         std_x = torch.sqrt(x.var(dim=0) + 0.0001)
         std_y = torch.sqrt(y.var(dim=0) + 0.0001)
         loss_std = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
+        loss_std = self.std_l * loss_std
 
         cov_x = (x.T @ x) / (B - 1)
         cov_y = (y.T @ y) / (B - 1)
         loss_cov = off_diagonal(cov_x).pow_(2).sum().div(D) + off_diagonal(cov_y).pow_(2).sum().div(D)
+        loss_cov = self.cov_l * loss_cov
 
-        loss = (
-            self.mse_l * loss_mse
-            + self.std_l * loss_std
-            + self.cov_l * loss_cov
-        )
-        return loss
+        total_loss = loss_mse + loss_std + loss_cov
+
+        # loss = torch.stack(1, total_loss.unsqueeze(1), loss_mse.unsqueeze(1), loss_std.unsqueeze(1))
+
+        return total_loss
 
     def forward(
         self,
@@ -262,6 +276,8 @@ class BYOL_MLP(nn.Module):
         return_projection = True,
         sequential = False
     ):
+        # TODO: sym & closed loop can use two predictors
+
         assert not (self.training and x.shape[0] == 1), 'you must have greater than 1 sample when training, due to the batchnorm in the projection layer'
 
         if return_embedding:
@@ -273,14 +289,12 @@ class BYOL_MLP(nn.Module):
             online_proj_one, _ = self.online_encoder(image_one)
             online_pred_one = self.online_predictor(online_proj_one) + online_proj_one
             
-            # print(online_pred_one.size())
-            # online_pred_one = online_pred_one[-1]
             if self.closed_loop:
-                closed_pred_one = self.online_predictor(online_pred_one) + online_pred_one
+                closed_pred_one = online_pred_one - self.online_predictor(online_pred_one) # reverse pred
 
-            if not self.asym_loss:
+            if not self.asym_loss: # sym loss, two way prediction
                 online_proj_two, _ = self.online_encoder(image_two)
-                online_pred_two = self.online_predictor(online_proj_two) + online_proj_two
+                online_pred_two = online_proj_two - self.online_predictor(online_proj_two) # reverse pred
                 if self.closed_loop:
                     closed_pred_two = self.online_predictor(online_pred_two) + online_proj_two
 
@@ -298,65 +312,93 @@ class BYOL_MLP(nn.Module):
             # print(online_pred_one.size(), target_proj_two.size())
             # print(closed_pred_one.size(), target_proj_one.size())
 
-            loss_one = self.loss_fn(online_pred_one, target_proj_two.detach())
+            loss_one = self.loss_fn(online_pred_one, target_proj_two)
+
             if self.closed_loop:
-                loss_one += self.loss_fn(closed_pred_one, target_proj_one.detach())
+                loss_one = self.loss_fn(closed_pred_one, target_proj_one)
                 loss_one = loss_one / 2
 
             if not self.asym_loss: # sym loss, two way prediction
-                loss_two = self.loss_fn(online_pred_two, target_proj_one.detach())
+                loss_two = self.loss_fn(online_pred_two, target_proj_one)
                 if self.closed_loop:
-                    loss_two += self.loss_fn(closed_pred_two, target_proj_two.detach())
+                    loss_two += self.loss_fn(closed_pred_two, target_proj_two)
                     loss_two = loss_two / 2
                 loss = loss_one + loss_two
             else:
                 loss = loss_one * 2
 
         else:
-            # TODO: implement sequential case
-            image_one = x
+            B, N, C, T, H, W = x.size()
+            x = x.transpose(0,1) # N, B, C, T, H, W
+
+            image_one = x[0]
+            image_two = x[-1]
+            # print(image_one.size()) # B, C, T, H, W
+
+            ### calculate predictions
             online_proj_one, _ = self.online_encoder(image_one)
-            # print(integration_time_f)
-            online_pred_next_list = self.online_predictor(online_proj_one) + online_proj_one
-            # print(online_proj_one.size(), online_pred_next_list.size())
-            target_proj_next_list = []
+            online_pred_next_list = []
+            for i in range(N-1): # first -> last, using actual first
+                if i == 0:
+                    online_pred_next = self.online_predictor(online_proj_one) + online_proj_one
+                else:
+                    online_pred_next = self.online_predictor(online_pred_next_list[i]) + online_pred_next_list[i]
+                online_pred_next_list.append(online_pred_next)
+            online_pred_next_list = torch.stack(online_pred_next_list, 0) # N-1, B, D
+            # print(online_pred_next_list.size()) 
+            if self.closed_loop:
+                online_proj_two_pred = online_pred_next_list[-1] # predicted last latent
+                online_pred_backprev_list = [] 
+                for i in range(N-1): # last -> first, using predicted last
+                    if i == 0:
+                        online_pred_backprev = online_proj_two_pred - self.online_predictor(online_proj_two_pred) # minus, if using one predictor
+                    else:
+                        online_pred_backprev = online_pred_backprev_list[i] - self.online_predictor(online_pred_backprev_list[i]) # minus, if using one predictor
+                    online_pred_backprev_list.append(online_pred_backprev)
+                online_pred_backprev_list.reverse()
+                online_pred_backprev_list = torch.stack(online_pred_backprev_list, 0) # N-1, B, D, need to reverse the list
+                # print(online_pred_backprev_list.size())
+
+            if not self.asym_loss: # sym loss, two way prediction, need to start from last as well
+                online_proj_two, _ = self.online_encoder(image_two)
+                online_pred_prev_list = []
+                for i in range(N-1): # last -> first, using actual last
+                    if i == 0:
+                        online_pred_prev = online_proj_two - self.online_predictor(online_proj_two) # minus, if using one predictor
+                    else:
+                        online_pred_prev = online_pred_prev_list[i] - self.online_predictor(online_pred_prev_list[i]) # minus, if using one predictor
+                    online_pred_prev_list.append(online_pred_prev)
+                online_pred_prev_list.reverse()
+                online_pred_prev_list = torch.stack(online_pred_prev_list, 0) # N-1, B, D, need to reverse the list
+                # print(online_pred_prev_list.size())
+                if self.closed_loop:
+                    online_proj_one_pred = online_pred_prev_list[0] # have reversed the list, so index 0
+                    online_pred_backnext_list = []
+                    for i in range(N-1):  # first -> last, using predicted first
+                        if i == 0:
+                            online_pred_backnext = online_proj_one_pred + self.online_predictor(online_proj_one_pred)
+                        else:
+                            online_pred_backnext = online_pred_backnext_list[i] + self.online_predictor(online_pred_backnext_list[i])
+                        online_pred_backnext_list.append(online_pred_backnext)
+                    online_pred_backnext_list = torch.stack(online_pred_backnext_list, 0)
+            ### calculate ground truth
             with torch.no_grad():
                 target_encoder = self._get_target_encoder() if self.use_momentum else self.online_encoder
-                for image_two in x2:
-                    target_proj_two, _ = target_encoder(image_two)
-                    target_proj_next_list.append(target_proj_two)
-                # print(len(target_proj_next_list))
-                # target_proj_first = target_encoder(image_one)
-
-            if not self.asym_loss:
-                target_proj_prev_list = target_proj_next_list[::-1][1:]
-                with torch.no_grad():
-                    target_encoder = self._get_target_encoder() if self.use_momentum else self.online_encoder
-                    target_proj_first, _ = target_encoder(image_one)
-                    target_proj_prev_list.append(target_proj_first)
-                image_last = x2[-1]
-                online_proj_last, _ = self.online_encoder(image_last)
-                online_pred_prev_list = self.online_predictor(online_proj_last) + online_proj_last
-                # print(target_proj_prev_list[0].size())
-
-            target_proj_next_list = torch.stack(target_proj_next_list, 0)
-            target_proj_next_list.detach_()
-
-            # print(target_proj_prev_list[2])
-            target_proj_prev_list = torch.stack(target_proj_prev_list, 0)
-            target_proj_prev_list.detach_()
-
-            loss_one = self.loss_fn(online_pred_next_list, target_proj_next_list.detach()) # forward prediction
+                target_proj_list, _ = target_encoder(x.reshape(N*B, C, T, H, W)) 
+            target_proj_list.detach_()
+            target_proj_list = target_proj_list.view(N, B, -1) # detach_() inplace, does not require gradient
+            # print(target_proj_list.size()) # N, B, D
+            ### calculate loss
+            loss_one = self.loss_fn(online_pred_next_list.view((N-1)*B, -1), target_proj_list[1:].view((N-1)*B, -1)) 
             if self.closed_loop:
-                online_pred_next_prev_list = self.online_predictor(online_pred_next_list[-1])
-                loss_one += self.loss_fn(online_pred_next_prev_list, target_proj_prev_list.detach())
+                loss_one += self.loss_fn(online_pred_backprev_list.view((N-1)*B, -1), target_proj_list[:-1].view((N-1)*B, -1))
+                loss_one = loss_one / 2
 
-            if not self.asym_loss:
-                loss_two = self.loss_fn(online_pred_prev_list, target_proj_prev_list.detach()) # backward prediction
+            if not self.asym_loss: # sym loss, two way prediction
+                loss_two = self.loss_fn(online_pred_prev_list.view((N-1)*B, -1), target_proj_list[:-1].view((N-1)*B, -1))
                 if self.closed_loop:
-                    online_pred_prev_next_list = self.online_predictor(online_pred_prev_list[-1])
-                    loss_two += self.loss_fn(online_pred_prev_next_list, target_proj_next_list.detach())
-
+                    loss_two += self.loss_fn(online_pred_backnext_list.view((N-1)*B, -1), target_proj_list[1:].view((N-1)*B, -1))
+                    loss_two = loss_two / 2
                 loss = loss_one + loss_two
             else:
                 loss = loss_one * 2
