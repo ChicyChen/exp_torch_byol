@@ -26,33 +26,43 @@ from augmentation import *
 
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--gpu_num', default=4, type=int)
+
 parser.add_argument('--epochs', default=100, type=int,
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int,
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('--pretrain_folder', default='', type=str)
 parser.add_argument('--pretrain', action='store_true')
-parser.add_argument('--gpu', default='0,1', type=str)
-parser.add_argument('--gpu_num', default=2, type=int)
-parser.add_argument('--batch_size', default=16, type=int)
 
-parser.add_argument('--asym_loss', action='store_true')
-parser.add_argument('--closed_loop', action='store_true')
-parser.add_argument('--useode', action='store_true')
-parser.add_argument('--adjoint', action='store_true')
-parser.add_argument('--rtol', default=1e-4, type=float, help='rtol of ode solver')
-parser.add_argument('--atol', default=1e-4, type=float, help='atol of ode solver')
-# parser.add_argument('--odenorm', action='store_true')
-
+parser.add_argument('--batch_size', default=8, type=int)
 parser.add_argument('--lr', default=1e-4, type=float, help='learning rate')
 parser.add_argument('--wd', default=1e-5, type=float, help='weight decay')
 
 parser.add_argument('--num_seq', default=1, type=int)
-parser.add_argument('--seq_len', default=4, type=int)
+parser.add_argument('--seq_len', default=8, type=int)
 parser.add_argument('--downsample', default=4, type=int)
 parser.add_argument('--num_aug', default=2, type=int)
 
+parser.add_argument('--asym_loss', action='store_true')
+parser.add_argument('--closed_loop', action='store_true')
+
+parser.add_argument('--pred_hidden', default=4096, type=int)
+parser.add_argument('--projection', default=256, type=int)
+
+parser.add_argument('--ema', default=0.99, type=float, help='EMA')
+parser.add_argument('--no_mom', action='store_true')
+parser.add_argument('--no_projector', action='store_true')
+parser.add_argument('--use_simsiam_mlp', action='store_true')
+
+parser.add_argument('--useode', action='store_true')
+parser.add_argument('--adjoint', action='store_true')
+parser.add_argument('--rtol', default=1e-4, type=float, help='rtol of ode solver')
+parser.add_argument('--atol', default=1e-4, type=float, help='atol of ode solver')
+
 parser.add_argument('--backbone', default='r3d18', type=str, help='r3d18, r2118')
+parser.add_argument('--head_lr_frac', default = 1.0, type=float)
 
 parser.add_argument('--local_rank', default=-1, type=int,
                     help='node rank for distributed training')
@@ -111,7 +121,9 @@ def main():
     args = parser.parse_args()
 
     
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_ddp/3dbase_ode%s_closed%s_ucf101_lr%s_wd%s' % (args.useode, args.closed_loop, args.lr, args.wd)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_ddp_byol/ema%s_hid%s_prj%s_sym%s_closed%s_lr%s_wd%s' \
+     % (args.ema, args.pred_hidden, args.projection, not args.asym_loss, args.closed_loop, args.lr, args.wd)
+
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
     args.ckpt_folder = ckpt_folder
@@ -160,7 +172,7 @@ def main_worker(gpu, args):
     if args.backbone == 'r3d18':
         resnet = models.video.r3d_18()
         # modify model
-        resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        # resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
         # resnet.maxpool = torch.nn.Identity()
     elif args.backbone == 'r2118':
         resnet = models.video.r2plus1d_18()
@@ -171,23 +183,35 @@ def main_worker(gpu, args):
 
     model = BYOL(
         resnet,
-        clip_size = 8,
+        clip_size = args.seq_len,
         image_size = 128,
         hidden_layer = 'avgpool',
-        projection_size = 256,
-        projection_hidden_size = 4096,
+        projection_size = args.projection,
+        projection_hidden_size = args.pred_hidden,
+        moving_average_decay = args.ema,
         asym_loss = args.asym_loss,
         closed_loop = args.closed_loop,
+        use_momentum = not args.no_mom,
+        use_projector = not args.no_projector,
+        use_simsiam_mlp = args.use_simsiam_mlp,
         useode = args.useode,
         adjoint = args.adjoint,
         rtol = args.rtol,
-        atol = args.atol,
-        odenorm = None
+        atol = args.atol
     )
 
     print('model created')
     
     model.cuda(gpu)
+
+    # params = []
+    # for name, param in model.named_parameters():
+    #     if 'predict' in name:
+    #         params.append({'params': param, 'lr': args.lr * args.head_lr_frac})
+    #     else:
+    #         params.append({'params': param})
+    # optimizer = torch.optim.Adam(params, lr=args.lr, weight_decay=args.wd)
+
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     if args.pretrain:
