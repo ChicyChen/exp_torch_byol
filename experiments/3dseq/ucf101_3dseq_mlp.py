@@ -172,8 +172,8 @@ def main():
     if args.no_mom:
         args.ema = 1.0
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_mlp_bnl%s_pbnl%s_ns%s/ema%s_mse%s_std%s_cov%s_po%s_hid%s_prj%s_sym%s_closed%s_sequential%s_lr%s_wd%s' \
-        % (args.bn_last, args.pred_bn_last, args.num_seq, args.ema, args.mse_l, args.std_l, args.cov_l, args.pretrain_other, args.pred_hidden, args.projection, args.sym_loss, args.closed_loop, args.sequential, args.lr, args.wd)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_mlp_bnl%s_pbnl%s_ns%s/ema%s_mse%s_std%s_cov%s_po%s_hid%s_prj%s_sym%s_closed%s_sequential%s_bs%s_lr%s_wd%s' \
+        % (args.bn_last, args.pred_bn_last, args.num_seq, args.ema, args.mse_l, args.std_l, args.cov_l, args.pretrain_other, args.pred_hidden, args.projection, args.sym_loss, args.closed_loop, args.sequential, args.batch_size, args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)

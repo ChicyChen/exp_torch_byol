@@ -117,8 +117,8 @@ def main():
     if args.no_mom:
         args.ema = 1.0
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_byol/ema%s_hid%s_prj%s_sym%s_closed%s_lr%s_wd%s' \
-     % (args.ema, args.pred_hidden, args.projection, not args.asym_loss, args.closed_loop, args.lr, args.wd)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_byol/ema%s_hid%s_prj%s_sym%s_closed%s_bs%s_lr%s_wd%s' \
+     % (args.ema, args.pred_hidden, args.projection, not args.asym_loss, args.closed_loop, args.batch_size, args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -211,7 +211,7 @@ def main():
         logging.info('Epoch: %s, Train loss: %s' % (i, train_loss))
         logging.info('Epoch: %s, Test loss: %s' % (i, test_loss))
 
-        if (i+1)%10 == 0:
+        if (i+1)%10 == 0 or i < 20:
             # save your improved network
             checkpoint_path = os.path.join(
                 ckpt_folder, 'resnet_epoch%s.pth.tar' % str(i+1))

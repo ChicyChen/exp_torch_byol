@@ -42,7 +42,7 @@ parser.add_argument('--ckpt_folder', default='checkpoints/3dbase_ucf101_lr0.0001
 parser.add_argument('--epoch_num', default=100, type=int)
 
 parser.add_argument('--num_seq', default=1, type=int)
-parser.add_argument('--seq_len', default=4, type=int)
+parser.add_argument('--seq_len', default=8, type=int)
 parser.add_argument('--downsample', default=4, type=int)
 parser.add_argument('--num_aug', default=1, type=int)
 
@@ -112,7 +112,7 @@ def main():
     if not args.kinetics:
         resnet = models.video.r3d_18()
         # modify model
-        resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        # resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
     else:
         resnet = models.video.r3d_18(pretrained=True)
         # modify model

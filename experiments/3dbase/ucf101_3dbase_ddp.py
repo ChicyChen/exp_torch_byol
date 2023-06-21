@@ -12,7 +12,7 @@ from torchvision import models
 from torchvision import transforms as T
 import torch.nn.functional as F
 
-from dataloader_3d import get_data_ucf, UCF101
+from dataloader_3d import get_data_ucf
 from torch.utils.data import DataLoader
 
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -36,7 +36,7 @@ parser.add_argument('--start-epoch', default=0, type=int,
 parser.add_argument('--pretrain_folder', default='', type=str)
 parser.add_argument('--pretrain', action='store_true')
 
-parser.add_argument('--batch_size', default=8, type=int)
+parser.add_argument('--batch_size', default=8, type=int) # for ddp, batch size according to BS for each GPU, so global_BS = BS * gpu_num
 parser.add_argument('--lr', default=1e-4, type=float, help='learning rate')
 parser.add_argument('--wd', default=1e-5, type=float, help='weight decay')
 
@@ -126,7 +126,9 @@ def main():
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
+    #########################################################
     args.ckpt_folder = ckpt_folder
+    #########################################################
 
     logging.basicConfig(filename=os.path.join(ckpt_folder, 'byol_train.log'), level=logging.INFO)
     logging.info('Started')
@@ -214,14 +216,15 @@ def main_worker(gpu, args):
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
-    if args.pretrain:
-        pretrain_path = os.path.join(args.pretrain_folder, 'byol_epoch%s.pth.tar' % args.start_epoch)
-        model.load_state_dict(torch.load(pretrain_path)) # load model
 
     ###############################################################
     # Wrap the model
     model = DDP(model, device_ids=[gpu], find_unused_parameters=True)
     ###############################################################
+
+    if args.pretrain:
+        pretrain_path = os.path.join(args.pretrain_folder, 'byol_epoch%s.pth.tar' % args.start_epoch)
+        model.load_state_dict(torch.load(pretrain_path)) # load model
 
     print('model wrapped')
 
@@ -264,12 +267,14 @@ def main_worker(gpu, args):
 
         train_loss_list.append(train_loss)
         test_loss_list.append(test_loss)
-        print('Epoch: %s, Train loss: %s' % (i, train_loss))
-        print('Epoch: %s, Test loss: %s' % (i, test_loss))
-        logging.info('Epoch: %s, Train loss: %s' % (i, train_loss))
-        logging.info('Epoch: %s, Test loss: %s' % (i, test_loss))
 
-        if (i < 10 or (i+1)%10 == 0) and rank == 0:
+        if rank == 0: # only check rank 0's loss
+            print('Epoch: %s, Train loss: %s' % (i, train_loss))
+            print('Epoch: %s, Test loss: %s' % (i, test_loss))
+            logging.info('Epoch: %s, Train loss: %s' % (i, train_loss))
+            logging.info('Epoch: %s, Test loss: %s' % (i, test_loss))
+
+        if ((i+1)%10 == 0 or i < 20) and rank == 0:
             # save your improved network
             checkpoint_path = os.path.join(
                 ckpt_folder, 'resnet_epoch%s.pth.tar' % str(i+1))
