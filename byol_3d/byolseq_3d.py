@@ -19,7 +19,7 @@ from helpers import *
     
 # main class
 
-class BYOL_MLP(nn.Module):
+class BYOL_SEQ(nn.Module):
     def __init__(
         self,
         net,
@@ -156,9 +156,9 @@ class BYOL_MLP(nn.Module):
             online_pred_next_list = []
             for i in range(N-1): # first -> last, using actual first
                 if i == 0:
-                    online_pred_next = self.online_predictor(online_proj_one) + online_proj_one
+                    online_pred_next = self.online_predictor(online_proj_one)
                 else:
-                    online_pred_next = self.online_predictor(online_pred_next_list[i]) + online_pred_next_list[i]
+                    online_pred_next = self.online_predictor(online_pred_next_list[i])
                 online_pred_next_list.append(online_pred_next)
             online_pred_next_list = torch.stack(online_pred_next_list, 0) # N-1, B, D
             # print(online_pred_next_list.size()) 
@@ -167,9 +167,9 @@ class BYOL_MLP(nn.Module):
                 online_pred_backprev_list = [] 
                 for i in range(N-1): # last -> first, using predicted last
                     if i == 0:
-                        online_pred_backprev = online_proj_two_pred - self.online_predictor(online_proj_two_pred) # minus, if using one predictor
+                        online_pred_backprev = self.online_predictor(online_proj_two_pred) 
                     else:
-                        online_pred_backprev = online_pred_backprev_list[i] - self.online_predictor(online_pred_backprev_list[i]) # minus, if using one predictor
+                        online_pred_backprev = self.online_predictor(online_pred_backprev_list[i]) 
                     online_pred_backprev_list.append(online_pred_backprev)
                 online_pred_backprev_list.reverse()
                 online_pred_backprev_list = torch.stack(online_pred_backprev_list, 0) # N-1, B, D, need to reverse the list
@@ -180,9 +180,9 @@ class BYOL_MLP(nn.Module):
                 online_pred_prev_list = []
                 for i in range(N-1): # last -> first, using actual last
                     if i == 0:
-                        online_pred_prev = online_proj_two - self.online_predictor(online_proj_two) # minus, if using one predictor
+                        online_pred_prev = self.online_predictor(online_proj_two)
                     else:
-                        online_pred_prev = online_pred_prev_list[i] - self.online_predictor(online_pred_prev_list[i]) # minus, if using one predictor
+                        online_pred_prev = self.online_predictor(online_pred_prev_list[i])
                     online_pred_prev_list.append(online_pred_prev)
                 online_pred_prev_list.reverse()
                 online_pred_prev_list = torch.stack(online_pred_prev_list, 0) # N-1, B, D, need to reverse the list
@@ -192,9 +192,9 @@ class BYOL_MLP(nn.Module):
                     online_pred_backnext_list = []
                     for i in range(N-1):  # first -> last, using predicted first
                         if i == 0:
-                            online_pred_backnext = online_proj_one_pred + self.online_predictor(online_proj_one_pred)
+                            online_pred_backnext = self.online_predictor(online_proj_one_pred)
                         else:
-                            online_pred_backnext = online_pred_backnext_list[i] + self.online_predictor(online_pred_backnext_list[i])
+                            online_pred_backnext = self.online_predictor(online_pred_backnext_list[i])
                         online_pred_backnext_list.append(online_pred_backnext)
                     online_pred_backnext_list = torch.stack(online_pred_backnext_list, 0)
             ### calculate ground truth

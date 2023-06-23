@@ -54,6 +54,7 @@ parser.add_argument('--sequential', action='store_true')
 
 parser.add_argument('--pred_hidden', default=4096, type=int)
 parser.add_argument('--projection', default=256, type=int)
+parser.add_argument('--pred_layer', default=2, type=int)
 
 parser.add_argument('--mse_l', default=1.0, type=float)
 parser.add_argument('--std_l', default=0.0, type=float)
@@ -69,24 +70,8 @@ parser.add_argument('--pred_bn_last', action='store_true')
 
 
 
-def default_transform():
-    transform = transforms.Compose([
-        RandomHorizontalFlip(consistent=True),
-        RandomCrop(size=128, consistent=True),
-        Scale(size=(128,128)),
-        GaussianBlur(size=128, p=0.5, consistent=True),
-        # ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0), # DPC
-        # RandomGray(consistent=False, p=0.5), # DPC
-        ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05, p=0.8),
-        RandomGray(consistent=False, p=0.2),
-        ToTensor(),
-        Normalize()
-    ])
-    return transform
-
-
 def train_one_epoch(model, train_loader, optimizer, train=True):
-    global have_print
+    # global have_print
 
     if train:
         model.train()
@@ -139,9 +124,9 @@ def train_one_epoch(model, train_loader, optimizer, train=True):
                 images_list.append(images)
             images = torch.stack(images_list, 1) # B, N, C, T, H, W: parallel split along the first axis
 
-            if not have_print:
-                print(images.size())
-                have_print = True
+            # if not have_print:
+            #     print(images.size())
+            #     have_print = True
 
             optimizer.zero_grad()
             loss = model(images, None, sequential=True)
@@ -163,8 +148,8 @@ def main():
     torch.manual_seed(233)
     np.random.seed(233)
 
-    global have_print
-    have_print = False
+    # global have_print
+    # have_print = False
 
     global args
     args = parser.parse_args()
@@ -172,8 +157,8 @@ def main():
     if args.no_mom:
         args.ema = 1.0
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_mlp_bnl%s_pbnl%s_ns%s/ema%s_mse%s_std%s_cov%s_po%s_hid%s_prj%s_sym%s_closed%s_sequential%s_bs%s_lr%s_wd%s' \
-        % (args.bn_last, args.pred_bn_last, args.num_seq, args.ema, args.mse_l, args.std_l, args.cov_l, args.pretrain_other, args.pred_hidden, args.projection, args.sym_loss, args.closed_loop, args.sequential, args.batch_size, args.lr, args.wd)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_mlp_bnl%s_pbnl%s_ns%s/ema%s_mse%s_std%s_cov%s_predln%s_hid%s_prj%s_sym%s_closed%s_sequential%s_bs%s_lr%s_wd%s' \
+        % (args.bn_last, args.pred_bn_last, args.num_seq, args.ema, args.mse_l, args.std_l, args.cov_l, args.pred_layer, args.pred_hidden, args.projection, args.sym_loss, args.closed_loop, args.sequential, args.batch_size, args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -197,6 +182,7 @@ def main():
         hidden_layer = 'avgpool',
         projection_size = args.projection,
         projection_hidden_size = args.pred_hidden,
+        num_layer=args.pred_layer,
         moving_average_decay = args.ema,
         asym_loss = not args.sym_loss,
         closed_loop = args.closed_loop,

@@ -51,7 +51,6 @@ parser.add_argument('--projection', default=256, type=int)
 
 parser.add_argument('--ema', default=0.99, type=float, help='EMA')
 parser.add_argument('--no_mom', action='store_true')
-parser.add_argument('--no_projector', action='store_true')
 parser.add_argument('--use_simsiam_mlp', action='store_true')
 
 parser.add_argument('--useode', action='store_true')
@@ -64,23 +63,7 @@ parser.add_argument('--head_lr_frac', default = 1.0, type=float)
 
 
 
-def default_transform():
-    transform = transforms.Compose([
-        RandomHorizontalFlip(consistent=True),
-        RandomCrop(size=128, consistent=True),
-        Scale(size=(128,128)),
-        GaussianBlur(size=128, p=0.5, consistent=True),
-        # ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0), # DPC
-        # RandomGray(consistent=False, p=0.5), # DPC
-        ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05, p=0.8),
-        RandomGray(consistent=False, p=0.2),
-        ToTensor(),
-        Normalize()
-    ])
-    return transform
-
-
-def train_one_epoch(model, train_loader, optimizer, train=True):
+def train_one_epoch(model, train_loader, optimizer, train=True, num_aug=2):
     if train:
         model.train()
     else:
@@ -89,7 +72,11 @@ def train_one_epoch(model, train_loader, optimizer, train=True):
     num_batches = len(train_loader)
 
     for data in train_loader:
-        images, images2, label = data
+        if num_aug == 2:
+            images, images2, label = data
+        else:
+            images, label = data
+            images2 = images
         images = images.to(cuda)
         images2 = images2.to(cuda)
         label = label.to(cuda)
@@ -117,8 +104,8 @@ def main():
     if args.no_mom:
         args.ema = 1.0
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_byol/ema%s_hid%s_prj%s_sym%s_closed%s_bs%s_lr%s_wd%s' \
-     % (args.ema, args.pred_hidden, args.projection, not args.asym_loss, args.closed_loop, args.batch_size, args.lr, args.wd)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_byol_na%s/ema%s_hid%s_prj%s_sym%s_closed%s_bs%s_lr%s_wd%s' \
+     % (args.num_aug, args.ema, args.pred_hidden, args.projection, not args.asym_loss, args.closed_loop, args.batch_size, args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -151,7 +138,6 @@ def main():
         asym_loss = args.asym_loss,
         closed_loop = args.closed_loop,
         use_momentum = not args.no_mom,
-        use_projector = not args.no_projector,
         use_simsiam_mlp = args.use_simsiam_mlp,
         useode = args.useode,
         adjoint = args.adjoint,
@@ -199,8 +185,8 @@ def main():
     best_epoch = 0
 
     for i in epoch_list:
-        train_loss = train_one_epoch(model, train_loader, optimizer)
-        test_loss = train_one_epoch(model, test_loader, optimizer, False)
+        train_loss = train_one_epoch(model, train_loader, optimizer, num_aug = args.num_aug)
+        test_loss = train_one_epoch(model, test_loader, optimizer, False, num_aug = args.num_aug)
         if test_loss < lowest_loss:
             lowest_loss = test_loss
             best_epoch = i + 1
