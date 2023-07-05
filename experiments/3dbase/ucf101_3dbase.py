@@ -25,6 +25,11 @@ from augmentation import *
 
 
 parser = argparse.ArgumentParser()
+
+parser.add_argument('--frame_root', default='/home/siyich/Datasets/Videos', type=str,
+                    help='root folder to store data like UCF101/..., better to put in servers SSD \
+                    default path is mounted from data server for the home directory')
+
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
 
 parser.add_argument('--epochs', default=100, type=int,
@@ -42,6 +47,7 @@ parser.add_argument('--num_seq', default=1, type=int)
 parser.add_argument('--seq_len', default=8, type=int)
 parser.add_argument('--downsample', default=4, type=int)
 parser.add_argument('--num_aug', default=2, type=int)
+parser.add_argument('--inter_len', default=0, type=int)
 
 parser.add_argument('--asym_loss', action='store_true')
 parser.add_argument('--closed_loop', action='store_true')
@@ -76,7 +82,8 @@ def train_one_epoch(model, train_loader, optimizer, train=True, num_aug=2):
             images, images2, label = data
         else:
             images, label = data
-            images2 = images
+            images2 = images.copy()
+            
         images = images.to(cuda)
         images2 = images2.to(cuda)
         label = label.to(cuda)
@@ -168,7 +175,10 @@ def main():
                                 seq_len=args.seq_len, 
                                 num_seq=args.num_seq, 
                                 downsample=args.downsample,
-                                num_aug=args.num_aug)
+                                num_aug=args.num_aug,
+                                frame_root=args.frame_root,
+                                # inter_len=args.inter_len
+                                )
     test_loader = get_data_ucf(batch_size=args.batch_size, 
                                 mode='val',
                                 transform=default_transform(), 
@@ -176,7 +186,10 @@ def main():
                                 seq_len=args.seq_len, 
                                 num_seq=args.num_seq, 
                                 downsample=args.downsample,
-                                num_aug=args.num_aug)
+                                num_aug=args.num_aug,
+                                frame_root=args.frame_root,
+                                # inter_len=args.inter_len
+                                )
     
     train_loss_list = []
     test_loss_list = []

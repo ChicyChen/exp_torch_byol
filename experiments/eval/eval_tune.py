@@ -37,8 +37,8 @@ parser.add_argument('--start-epoch', default=0, type=int,
 parser.add_argument('--pretrain_path', default='', type=str)
 parser.add_argument('--pretrain', action='store_true')
 
-parser.add_argument('--gpu', default='0,1', type=str)
-parser.add_argument('--batch_size', default=8, type=int)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--batch_size', default=16, type=int)
 
 parser.add_argument('--ckpt_folder', default='/home/siyich/byol-pytorch/checkpoints_bad/3dseq_ucf101_lr0.0001_wd1e-05', type=str)
 parser.add_argument('--epoch_num', default=100, type=int)
@@ -51,28 +51,14 @@ parser.add_argument('--class_num', default=101, type=int)
 parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
 parser.add_argument('--wd', default=1e-3, type=float, help='weight decay')
 
-parser.add_argument('--dropout', default=0.2, type=float)
+parser.add_argument('--dropout', default=0.5, type=float)
 
 parser.add_argument('--num_seq', default=1, type=int)
-parser.add_argument('--seq_len', default=4, type=int)
-parser.add_argument('--downsample', default=4, type=int)
+parser.add_argument('--seq_len', default=16, type=int)
+parser.add_argument('--downsample', default=8, type=int)
 parser.add_argument('--num_aug', default=1, type=int)
 
 parser.add_argument('--ode', action='store_true')
-
-
-def default_transform():
-    transform = transforms.Compose([
-        RandomHorizontalFlip(consistent=True),
-        RandomCrop(size=128, consistent=True),
-        Scale(size=(128,128)),
-        GaussianBlur(size=128, p=0.5, consistent=True),
-        ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05, p=0.8),
-        RandomGray(consistent=False, p=0.2),
-        ToTensor(),
-        Normalize()
-    ])
-    return transform
 
 
 def test_transform():
@@ -171,7 +157,7 @@ def main():
 
     resnet = models.video.r3d_18()
     # modify model
-    resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+    # resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
     # resnet.maxpool = torch.nn.Identity()
 
     if not args.ode:

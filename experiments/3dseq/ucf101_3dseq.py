@@ -28,6 +28,11 @@ from augmentation import *
 
 
 parser = argparse.ArgumentParser()
+
+parser.add_argument('--frame_root', default='/home/siyich/Datasets/Videos', type=str,
+                    help='root folder to store data like UCF101/..., better to put in servers SSD \
+                    default path is mounted from data server for the home directory')
+                    
 parser.add_argument('--gpu', default='0,1,2,3', type=str)
 
 parser.add_argument('--epochs', default=100, type=int,
@@ -45,6 +50,7 @@ parser.add_argument('--num_seq', default=2, type=int)
 parser.add_argument('--seq_len', default=8, type=int)
 parser.add_argument('--downsample', default=4, type=int)
 parser.add_argument('--num_aug', default=1, type=int)
+parser.add_argument('--inter_len', default=0, type=int)    # does not need to be positive
 
 parser.add_argument('--sym_loss', action='store_true')
 parser.add_argument('--closed_loop', action='store_true')
@@ -68,7 +74,7 @@ parser.add_argument('--pred_bn_last', action='store_true')
 
 
 
-def train_one_epoch(model, train_loader, optimizer, train=True):
+def train_one_epoch(model, train_loader, optimizer, train = True, num_aug = 1):
     # global have_print
 
     if train:
@@ -79,19 +85,23 @@ def train_one_epoch(model, train_loader, optimizer, train=True):
     num_batches = len(train_loader)
 
     for data in train_loader:
-        video, label = data # B, C, T, H, W
+        if num_aug == 1:
+            video, label = data # B, C, T, H, W
+        else:
+            video, video2, label = data # B, C, T, H, W
         label = label.to(cuda)
 
         if not args.sequential:
-            images = video[:, :, :args.seq_len, :, :]
-            images = images.to(cuda)
             for i in range(args.num_seq-1):
-                # index = i*args.seq_len
+                index1 = i*args.seq_len
                 index2 = (i+1)*args.seq_len
                 index3 = (i+2)*args.seq_len
-                # images = video[:, :, index:index2, :, :]
-                images2 = video[:, :, index2:index3, :, :]
-                # images = images.to(cuda)
+                images = video[:, :, index1:index2, :, :]
+                if num_aug == 1: # notice, even consistent crop etc, still inconsistent colorjitter, grey etc
+                    images2 = video[:, :, index2:index3, :, :]
+                else:
+                    images2 = video2[:, :, index2:index3, :, :]
+                images = images.to(cuda)
                 images2 = images2.to(cuda)
 
                 # if not have_print:
@@ -111,6 +121,10 @@ def train_one_epoch(model, train_loader, optimizer, train=True):
                 total_loss += loss.sum().item() / (args.num_seq-1)
         
         else:
+            # TODO: not supporting different augmentations
+            if num_aug > 1:
+                raise ValueError('Not supporting > 1 augmentations in sequential mode')
+                
             video = video.to(cuda)
             images_list = []
             for i in range(args.num_seq):
@@ -153,8 +167,8 @@ def main():
     global args
     args = parser.parse_args()
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_seq_bnl%s_pbnl%s_ns%s/ema%s_mse%s_std%s_predln%s_cov%s_hid%s_prj%s_sym%s_closed%s_sequential%s_bs%s_lr%s_wd%s' \
-        % (args.bn_last, args.pred_bn_last, args.num_seq, args.ema, args.mse_l, args.std_l, args.cov_l, args.pred_layer, args.pred_hidden, args.projection, args.sym_loss, args.closed_loop, args.sequential, args.batch_size, args.lr, args.wd)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_seq_na%s_bnl%s_pbnl%s_il%s_ns%s/ema%s_mse%s_std%s_cov%s_hid%s_prj%s_sym%s_closed%s_sequential%s_bs%s_lr%s_wd%s' \
+        % (args.num_aug, args.bn_last, args.pred_bn_last, args.inter_len, args.num_seq, args.ema, args.mse_l, args.std_l, args.cov_l, args.pred_hidden, args.projection, args.sym_loss, args.closed_loop, args.sequential, args.batch_size, args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -168,7 +182,7 @@ def main():
 
     resnet = models.video.r3d_18()
     # modify model
-    resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+    # resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
     # resnet.maxpool = torch.nn.Identity()
 
     model = BYOL_SEQ(
@@ -207,7 +221,10 @@ def main():
                                 seq_len=args.seq_len, 
                                 num_seq=args.num_seq, 
                                 downsample=args.downsample,
-                                num_aug=args.num_aug)
+                                num_aug=args.num_aug,
+                                inter_len=args.inter_len,
+                                frame_root=args.frame_root,
+                                )
     test_loader = get_data_ucf(batch_size=args.batch_size, 
                                 mode='val',
                                 transform=default_transform(), 
@@ -215,7 +232,10 @@ def main():
                                 seq_len=args.seq_len, 
                                 num_seq=args.num_seq, 
                                 downsample=args.downsample,
-                                num_aug=args.num_aug)
+                                num_aug=args.num_aug,
+                                inter_len=args.inter_len,
+                                frame_root=args.frame_root,
+                                )
     
     train_loss_list = []
     test_loss_list = []
@@ -224,8 +244,8 @@ def main():
     best_epoch = 0
 
     for i in epoch_list:
-        train_loss = train_one_epoch(model, train_loader, optimizer)
-        test_loss = train_one_epoch(model, test_loader, optimizer, False)
+        train_loss = train_one_epoch(model, train_loader, optimizer, num_aug = args.num_aug)
+        test_loss = train_one_epoch(model, test_loader, optimizer, False, num_aug = args.num_aug)
         if test_loss < lowest_loss:
             lowest_loss = test_loss
             best_epoch = i + 1
@@ -236,7 +256,7 @@ def main():
         logging.info('Epoch: %s, Train loss: %s' % (i, train_loss))
         logging.info('Epoch: %s, Test loss: %s' % (i, test_loss))
 
-        if (i+1)%10 == 0:
+        if (i+1)%10 == 0 or i < 20:
             # save your improved network
             checkpoint_path = os.path.join(
                 ckpt_folder, 'resnet_epoch%s.pth.tar' % str(i+1))

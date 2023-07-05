@@ -19,7 +19,7 @@ from helpers import *
     
 # main class
 
-class BYOL_SEQ(nn.Module):
+class BYOL_MLP_2P_NS(nn.Module):
     def __init__(
         self,
         net,
@@ -51,6 +51,7 @@ class BYOL_SEQ(nn.Module):
         self.target_ema_updater = EMA(moving_average_decay)
 
         self.online_predictor = MLP(projection_size, projection_size, projection_hidden_size, pred_bn_last) # predict dfference instead
+        self.online_predictor_reverse = MLP(projection_size, projection_size, projection_hidden_size, pred_bn_last) # predict dfference instead
 
         self.asym_loss = asym_loss
         self.closed_loop = closed_loop
@@ -69,7 +70,7 @@ class BYOL_SEQ(nn.Module):
     @singleton('target_encoder')
     def _get_target_encoder(self):
         target_encoder = copy.deepcopy(self.online_encoder)
-        set_requires_grad(target_encoder, False)
+        # set_requires_grad(target_encoder, False)
         return target_encoder
 
     def reset_moving_average(self):
@@ -103,27 +104,27 @@ class BYOL_SEQ(nn.Module):
             image_one, image_two = x, x2
 
             online_proj_one, _ = self.online_encoder(image_one)
-            online_pred_one = self.online_predictor(online_proj_one)
+            online_pred_one = self.online_predictor(online_proj_one) + online_proj_one
             
             if self.closed_loop:
-                closed_pred_one = self.online_predictor(online_pred_one)
+                closed_pred_one = online_pred_one + self.online_predictor_reverse(online_pred_one) # reverse pred
 
             if not self.asym_loss: # sym loss, two way prediction
                 online_proj_two, _ = self.online_encoder(image_two)
-                online_pred_two = self.online_predictor(online_proj_two) 
+                online_pred_two = online_proj_two + self.online_predictor_reverse(online_proj_two) # reverse pred
                 if self.closed_loop:
-                    closed_pred_two = self.online_predictor(online_pred_two)
+                    closed_pred_two = self.online_predictor(online_pred_two) + online_proj_two
 
             # print(image_one.size()) # [20, 3, 256, 256], [B, C, H, W]
             # print(online_proj_one.size()) # [2, 512], [B, projection_size]
             # print(online_pred_one.size()) # [2, 512], [B, projection_size]
 
-            with torch.no_grad():
-                target_encoder = self._get_target_encoder() if self.use_momentum else self.online_encoder
-                target_proj_two, _ = target_encoder(image_two)
-                target_proj_two.detach_()
-                target_proj_one, _ = target_encoder(image_one)
-                target_proj_one.detach_()
+            # with torch.no_grad():
+            target_encoder = self._get_target_encoder() if self.use_momentum else self.online_encoder
+            target_proj_two, _ = target_encoder(image_two)
+            # target_proj_two.detach_()
+            target_proj_one, _ = target_encoder(image_one)
+            # target_proj_one.detach_()
 
             # print(online_pred_one.size(), target_proj_two.size())
             # print(closed_pred_one.size(), target_proj_one.size())
@@ -156,9 +157,9 @@ class BYOL_SEQ(nn.Module):
             online_pred_next_list = []
             for i in range(N-1): # first -> last, using actual first
                 if i == 0:
-                    online_pred_next = self.online_predictor(online_proj_one)
+                    online_pred_next = self.online_predictor(online_proj_one) + online_proj_one
                 else:
-                    online_pred_next = self.online_predictor(online_pred_next_list[i])
+                    online_pred_next = self.online_predictor(online_pred_next_list[i]) + online_pred_next_list[i]
                 online_pred_next_list.append(online_pred_next)
             online_pred_next_list = torch.stack(online_pred_next_list, 0) # N-1, B, D
             # print(online_pred_next_list.size()) 
@@ -167,9 +168,9 @@ class BYOL_SEQ(nn.Module):
                 online_pred_backprev_list = [] 
                 for i in range(N-1): # last -> first, using predicted last
                     if i == 0:
-                        online_pred_backprev = self.online_predictor(online_proj_two_pred) 
+                        online_pred_backprev = online_proj_two_pred + self.online_predictor_reverse(online_proj_two_pred) # minus, if using one predictor
                     else:
-                        online_pred_backprev = self.online_predictor(online_pred_backprev_list[i]) 
+                        online_pred_backprev = online_pred_backprev_list[i] + self.online_predictor_reverse(online_pred_backprev_list[i]) # minus, if using one predictor
                     online_pred_backprev_list.append(online_pred_backprev)
                 online_pred_backprev_list.reverse()
                 online_pred_backprev_list = torch.stack(online_pred_backprev_list, 0) # N-1, B, D, need to reverse the list
@@ -180,9 +181,9 @@ class BYOL_SEQ(nn.Module):
                 online_pred_prev_list = []
                 for i in range(N-1): # last -> first, using actual last
                     if i == 0:
-                        online_pred_prev = self.online_predictor(online_proj_two)
+                        online_pred_prev = online_proj_two + self.online_predictor_reverse(online_proj_two) # minus, if using one predictor
                     else:
-                        online_pred_prev = self.online_predictor(online_pred_prev_list[i])
+                        online_pred_prev = online_pred_prev_list[i] + self.online_predictor_reverse(online_pred_prev_list[i]) # minus, if using one predictor
                     online_pred_prev_list.append(online_pred_prev)
                 online_pred_prev_list.reverse()
                 online_pred_prev_list = torch.stack(online_pred_prev_list, 0) # N-1, B, D, need to reverse the list
@@ -192,16 +193,16 @@ class BYOL_SEQ(nn.Module):
                     online_pred_backnext_list = []
                     for i in range(N-1):  # first -> last, using predicted first
                         if i == 0:
-                            online_pred_backnext = self.online_predictor(online_proj_one_pred)
+                            online_pred_backnext = online_proj_one_pred + self.online_predictor(online_proj_one_pred)
                         else:
-                            online_pred_backnext = self.online_predictor(online_pred_backnext_list[i])
+                            online_pred_backnext = online_pred_backnext_list[i] + self.online_predictor(online_pred_backnext_list[i])
                         online_pred_backnext_list.append(online_pred_backnext)
                     online_pred_backnext_list = torch.stack(online_pred_backnext_list, 0)
             ### calculate ground truth
-            with torch.no_grad():
-                target_encoder = self._get_target_encoder() if self.use_momentum else self.online_encoder
-                target_proj_list, _ = target_encoder(x.reshape(N*B, C, T, H, W)) 
-            target_proj_list.detach_()
+            # with torch.no_grad():
+            target_encoder = self._get_target_encoder() if self.use_momentum else self.online_encoder
+            target_proj_list, _ = target_encoder(x.reshape(N*B, C, T, H, W)) 
+            # target_proj_list.detach_()
             target_proj_list = target_proj_list.view(N, B, -1) # detach_() inplace, does not require gradient
             # print(target_proj_list.size()) # N, B, D
             ### calculate loss

@@ -127,15 +127,15 @@ class BYOL(nn.Module):
             target_proj_one.detach_()
 
 
-        loss_one = self.loss_fn(online_pred_one, target_proj_two.detach())
+        loss_one = self.loss_fn(online_pred_one, target_proj_two)
         if self.closed_loop:
-            loss_one += self.loss_fn(closed_pred_one, target_proj_one.detach())
+            loss_one += self.loss_fn(closed_pred_one, target_proj_one)
             loss_one = loss_one / 2
 
-        if not self.asym_loss:
-            loss_two = self.loss_fn(online_pred_two, target_proj_one.detach())
+        if not self.asym_loss: # by default sym loss
+            loss_two = self.loss_fn(online_pred_two, target_proj_one)
             if self.closed_loop:
-                loss_two += self.loss_fn(closed_pred_two, target_proj_two.detach())
+                loss_two += self.loss_fn(closed_pred_two, target_proj_two)
                 loss_two = loss_two / 2
             loss = loss_one + loss_two
         else:

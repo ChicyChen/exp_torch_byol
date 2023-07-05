@@ -74,6 +74,30 @@ def vic_reg_loss(x, y, mse_l, std_l, cov_l):
 
     return total_loss
 
+def vic_reg_nonorm_loss(x, y, mse_l, std_l, cov_l):
+    (B, D) = x.shape
+    
+    loss_mse = F.mse_loss(x, y)
+    loss_mse = mse_l * loss_mse # 25
+
+    # applied in VICReg
+    x = x - x.mean(dim=0)
+    y = y - y.mean(dim=0)
+
+    std_x = torch.sqrt(x.var(dim=0) + 0.0001)
+    std_y = torch.sqrt(y.var(dim=0) + 0.0001)
+    loss_std = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
+    loss_std = std_l * loss_std # 25
+
+    cov_x = (x.T @ x) / (B - 1)
+    cov_y = (y.T @ y) / (B - 1)
+    loss_cov = off_diagonal(cov_x).pow_(2).sum().div(D) + off_diagonal(cov_y).pow_(2).sum().div(D)
+    loss_cov = cov_l * loss_cov # 1
+
+    total_loss = loss_mse + loss_std + loss_cov
+
+    return total_loss
+
 # exponential moving average
 
 class EMA():

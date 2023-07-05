@@ -49,18 +49,18 @@ parser.add_argument('--num_aug', default=1, type=int)
 parser.add_argument('--ode', action='store_true')
 
 
-def default_transform():
-    transform = transforms.Compose([
-        RandomHorizontalFlip(consistent=True),
-        RandomCrop(size=128, consistent=True),
-        Scale(size=(128,128)),
-        GaussianBlur(size=128, p=0.5, consistent=True),
-        ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05, p=0.8),
-        RandomGray(consistent=False, p=0.2),
-        ToTensor(),
-        Normalize()
-    ])
-    return transform
+# def default_transform():
+#     transform = transforms.Compose([
+#         RandomHorizontalFlip(consistent=True),
+#         RandomCrop(size=128, consistent=True),
+#         Scale(size=(128,128)),
+#         GaussianBlur(size=128, p=0.5, consistent=True),
+#         ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05, p=0.8),
+#         RandomGray(consistent=False, p=0.2),
+#         ToTensor(),
+#         Normalize()
+#     ])
+#     return transform
 
 
 def test_transform():
