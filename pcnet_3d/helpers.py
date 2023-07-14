@@ -74,7 +74,7 @@ def vic_reg_loss(x, y, mse_l, std_l, cov_l):
 
     return total_loss
 
-def vic_reg_nonorm_loss(x, y, mse_l, std_l, cov_l):
+def vic_reg_nonorm_loss(x, y, mse_l, std_l, cov_l): #same as paper
     (B, D) = x.shape
     
     loss_mse = F.mse_loss(x, y)
@@ -153,7 +153,7 @@ def MLP_sub(dim, projection_size, hidden_size=4096, num_layer=2):
             nn.Linear(hidden_size, projection_size)
         )
 
-def MLP(dim, projection_size, hidden_size=4096, num_layer=2, bn_last=False):
+def MLP(dim, projection_size, hidden_size=4096, num_layer=2, bn_last=False, relu_last=False):
     sub_module = MLP_sub(dim, projection_size, hidden_size, num_layer)
     if bn_last:
         sub_module.add_module("last_bn", nn.BatchNorm1d(projection_size))

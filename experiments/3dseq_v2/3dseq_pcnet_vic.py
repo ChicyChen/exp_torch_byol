@@ -4,12 +4,12 @@ from importlib import reload
 # reload(sys)
 # sys.setdefaultencoding('utf-8')
 import argparse
-sys.path.append("/home/siyich/byol-pytorch/byol_3d")
+sys.path.append("/home/siyich/byol-pytorch/pcnet_3d")
 sys.path.append("/home/siyich/byol-pytorch/utils")
-from byolmlp_3d import BYOL_MLP
-from byolmlp_3d_ns import BYOL_MLP_NS
-from byolmlp_3d_2p import BYOL_MLP_2P
-from byolmlp_3d_2p_ns import BYOL_MLP_2P_NS
+# sys.path.append("/home/siyich/byol-pytorch/resnet")
+from pcnet_vic import PCNET_VIC
+# from resnet_modify import r3d_18_slow
+
 
 import numpy as np
 import torch
@@ -18,7 +18,7 @@ from torchvision import models
 from torchvision import transforms as T
 import torch.nn.functional as F
 
-from dataloader_3d import get_data_ucf
+from dataloader_v2 import get_data_ucf
 from torch.utils.data import DataLoader
 
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -45,7 +45,6 @@ parser.add_argument('--start-epoch', default=0, type=int,
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('--pretrain_folder', default='', type=str)
 parser.add_argument('--pretrain', action='store_true')
-parser.add_argument('--pretrain_other', action='store_true')
 
 parser.add_argument('--batch_size', default=16, type=int)
 parser.add_argument('--lr', default=1e-4, type=float, help='learning rate')
@@ -55,35 +54,25 @@ parser.add_argument('--random', action='store_true')
 parser.add_argument('--num_seq', default=2, type=int)
 parser.add_argument('--seq_len', default=8, type=int)
 parser.add_argument('--downsample', default=4, type=int)
-parser.add_argument('--num_aug', default=1, type=int)
 parser.add_argument('--inter_len', default=0, type=int)    # does not need to be positive
 
 parser.add_argument('--sym_loss', action='store_true')
 parser.add_argument('--closed_loop', action='store_true')
-parser.add_argument('--sequential', action='store_true')
 
 parser.add_argument('--pred_hidden', default=4096, type=int)
 parser.add_argument('--projection', default=256, type=int)
 parser.add_argument('--pred_layer', default=2, type=int)
 
 parser.add_argument('--mse_l', default=1.0, type=float)
-parser.add_argument('--std_l', default=0.0, type=float)
-parser.add_argument('--cov_l', default=0.0, type=float)
-
-parser.add_argument('--ema', default=0.99, type=float, help='EMA')
-parser.add_argument('--no_mom', action='store_true')
-parser.add_argument('--no_projector', action='store_true')
-parser.add_argument('--use_simsiam_mlp', action='store_true')
+parser.add_argument('--std_l', default=1.0, type=float)
+parser.add_argument('--cov_l', default=0.04, type=float)
 
 parser.add_argument('--bn_last', action='store_true')
 parser.add_argument('--pred_bn_last', action='store_true')
-
-parser.add_argument('--p2', action='store_true')
-parser.add_argument('--ns', action='store_true')
+parser.add_argument('--num_predictor', default=2, type=int)
 
 
-
-def train_one_epoch(model, train_loader, optimizer, train=True, num_aug = 1):
+def train_one_epoch(model, train_loader, optimizer, train=True):
     # global have_print
 
     if train:
@@ -94,74 +83,26 @@ def train_one_epoch(model, train_loader, optimizer, train=True, num_aug = 1):
     num_batches = len(train_loader)
 
     for data in train_loader:
-        if num_aug == 1:
-            video, label = data # B, C, T, H, W
-        else:
-            video, video2, label = data # B, C, T, H, W
+        video, label = data # B, N, C, T, H, W
         label = label.to(cuda)
+        video = video.to(cuda)
 
-        if not args.sequential:
-            for i in range(args.num_seq-1):
-                index1 = i*args.seq_len
-                index2 = (i+1)*args.seq_len
-                index3 = (i+2)*args.seq_len
-                images = video[:, :, index1:index2, :, :]
-                if num_aug == 1:
-                    images2 = video[:, :, index2:index3, :, :]
-                else:
-                    images2 = video2[:, :, index2:index3, :, :]
-                images = images.to(cuda)
-                images2 = images2.to(cuda)
+        # if not have_print:
+        #     print(images.size(), images2.size())
+        #     have_print = True
 
-                # if not have_print:
-                #     print(images.size(), images2.size())
-                #     have_print = True
+        optimizer.zero_grad()
+        loss = model(video)
 
-                optimizer.zero_grad()
-                loss = model(images, images2)
-
-                if train: # train separately for each step
-                    loss.sum().backward()
-                    optimizer.step()
-                    # EMA update
-                    model.module.update_moving_average()
-                else:
-                    pass
-                total_loss += loss.sum().item() / (args.num_seq-1)
-        
+        if train: # train separately for each step
+            # loss.sum().backward()
+            loss.mean().backward()
+            optimizer.step()
         else:
-            # TODO: not supporting different augmentations
-            if num_aug > 1:
-                raise ValueError('Not supporting > 1 augmentations in sequential mode')
-            
-            video = video.to(cuda)
-            images_list = []
-            for i in range(args.num_seq):
-                # index = i*args.seq_len
-                index1 = i*args.seq_len
-                index2 = (i+1)*args.seq_len
-                images = video[:, :, index1:index2, :, :]
-                images = images.to(cuda)
-                images_list.append(images)
-            images = torch.stack(images_list, 1) # B, N, C, T, H, W: parallel split along the first axis
+            pass
+        # total_loss += loss.sum().item() 
+        total_loss += loss.mean().item() 
 
-            # if not have_print:
-            #     print(images.size())
-            #     have_print = True
-
-            optimizer.zero_grad()
-            loss = model(images, None, sequential=True)
-
-            if train: # train together after predicting all
-                loss.sum().backward()
-                optimizer.step()
-                # EMA update
-                model.module.update_moving_average()
-            else:
-                pass
-            total_loss += loss.sum().item() / (args.num_seq-1)
-        
-        # print("done one batch.")
     
     return total_loss/num_batches
 
@@ -174,22 +115,16 @@ def main():
 
     global args
     args = parser.parse_args()
+    
+    model_select = PCNET_VIC
 
-    if args.no_mom:
-        args.ema = 1.0
-
-    if args.p2:
-        byol_select = BYOL_MLP_2P
-    else:
-        byol_select = BYOL_MLP
-
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_mlp_p2%s_na%s_bnl%s_pbnl%s_il%s_ns%s/ema%s_mse%s_std%s_cov%s_predln%s_hid%s_prj%s_sym%s_closed%s_sequential%s_bs%s_lr%s_wd%s' \
-        % (args.p2, args.num_aug, args.bn_last, args.pred_bn_last, args.inter_len, args.num_seq, args.ema, args.mse_l, args.std_l, args.cov_l, args.pred_layer, args.pred_hidden, args.projection, args.sym_loss, args.closed_loop, args.sequential, args.batch_size, args.lr, args.wd)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_vic/hid%s_prj%s_np%s_il%s_ns%s/mse%s_std%s_cov%s_sym%s_closed%s/bs%s_lr%s_wd%s' \
+        % (args.pred_hidden, args.projection, args.num_predictor, args.inter_len, args.num_seq, args.mse_l, args.std_l, args.cov_l, args.sym_loss, args.closed_loop, args.batch_size, args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
 
-    logging.basicConfig(filename=os.path.join(ckpt_folder, 'byol_train.log'), level=logging.INFO)
+    logging.basicConfig(filename=os.path.join(ckpt_folder, 'pcnet_vic_train.log'), level=logging.INFO)
     logging.info('Started')
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
@@ -197,29 +132,27 @@ def main():
     cuda = torch.device('cuda')
 
     resnet = models.video.r3d_18()
+    # TODO: other resnet
     # modify model example
     # resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
     # resnet.maxpool = torch.nn.Identity()
 
-    model = byol_select(
+    model = model_select(
         resnet,
         clip_size = args.seq_len,
-        image_size = 128,
+        image_size = 112,
         hidden_layer = 'avgpool',
         projection_size = args.projection,
         projection_hidden_size = args.pred_hidden,
-        num_layer=args.pred_layer,
-        moving_average_decay = args.ema,
-        asym_loss = not args.sym_loss,
+        num_layer = args.pred_layer,
+        sym_loss = args.sym_loss,
         closed_loop = args.closed_loop,
         mse_l = args.mse_l,
         std_l = args.std_l,
         cov_l = args.cov_l,
-        use_momentum = not args.no_mom,
-        use_projector = not args.no_projector,
-        use_simsiam_mlp = args.use_simsiam_mlp,
         bn_last = args.bn_last,
-        pred_bn_last = args.pred_bn_last
+        pred_bn_last = args.pred_bn_last,
+        num_predictor = args.num_predictor
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
@@ -229,30 +162,26 @@ def main():
     if args.pretrain:
         pretrain_path = os.path.join(args.pretrain_folder, 'byolode_epoch%s.pth.tar' % args.start_epoch)
         model.load_state_dict(torch.load(pretrain_path)) # load model
-    if args.pretrain_other: # only resnet is pretrained
-        pretrain_path = os.path.join(args.pretrain_folder, 'resnet_epoch%s.pth.tar' % args.start_epoch)
-        resnet.load_state_dict(torch.load(pretrain_path)) # load model
+    
 
     train_loader = get_data_ucf(batch_size=args.batch_size, 
                                 mode='train', 
-                                transform=default_transform(), 
-                                transform2=default_transform(),
+                                transform_consistent=None, 
+                                transform_inconsistent=default_transform(),
                                 seq_len=args.seq_len, 
                                 num_seq=args.num_seq, 
                                 downsample=args.downsample,
-                                num_aug=args.num_aug,
                                 random=args.random,
                                 inter_len=args.inter_len,
                                 frame_root=args.frame_root,
                                 )
     test_loader = get_data_ucf(batch_size=args.batch_size, 
                                 mode='val',
-                                transform=default_transform(), 
-                                transform2=default_transform(),
+                                transform_consistent=None, 
+                                transform_inconsistent=default_transform(),
                                 seq_len=args.seq_len, 
                                 num_seq=args.num_seq, 
                                 downsample=args.downsample,
-                                num_aug=args.num_aug,
                                 random=args.random,
                                 inter_len=args.inter_len,
                                 frame_root=args.frame_root,
@@ -265,8 +194,8 @@ def main():
     best_epoch = 0
 
     for i in epoch_list:
-        train_loss = train_one_epoch(model, train_loader, optimizer, num_aug = args.num_aug)
-        test_loss = train_one_epoch(model, test_loader, optimizer, False, num_aug = args.num_aug)
+        train_loss = train_one_epoch(model, train_loader, optimizer)
+        test_loss = train_one_epoch(model, test_loader, optimizer, False)
         if test_loss < lowest_loss:
             lowest_loss = test_loss
             best_epoch = i + 1
@@ -303,10 +232,10 @@ def main():
 
     # save your improved network
     checkpoint_path = os.path.join(
-        ckpt_folder, 'renet_epoch%s.pth.tar' % str(args.epochs))
+        ckpt_folder, 'resnet_epoch%s.pth.tar' % str(args.epochs))
     torch.save(resnet.state_dict(), checkpoint_path)
     checkpoint_path = os.path.join(
-        ckpt_folder, 'byolode_epoch%s.pth.tar' % str(args.epochs))
+        ckpt_folder, 'pcnet_epoch%s.pth.tar' % str(args.epochs))
     torch.save(model.state_dict(), checkpoint_path)
 
 

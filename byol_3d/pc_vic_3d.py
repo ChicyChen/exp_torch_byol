@@ -103,7 +103,7 @@ class PC_VIC(nn.Module):
             loss_one = self.loss_fn(online_pred_one, target_proj_two)
 
             if self.closed_loop:
-                loss_one = self.loss_fn(closed_pred_one, target_proj_one)
+                loss_one += self.loss_fn(closed_pred_one, target_proj_one)
                 loss_one = loss_one / 2
 
             if self.sym_loss: # sym loss, two way prediction

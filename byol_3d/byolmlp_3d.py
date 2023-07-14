@@ -131,7 +131,7 @@ class BYOL_MLP(nn.Module):
             loss_one = self.loss_fn(online_pred_one, target_proj_two)
 
             if self.closed_loop:
-                loss_one = self.loss_fn(closed_pred_one, target_proj_one)
+                loss_one += self.loss_fn(closed_pred_one, target_proj_one)
                 loss_one = loss_one / 2
 
             if not self.asym_loss: # sym loss, two way prediction

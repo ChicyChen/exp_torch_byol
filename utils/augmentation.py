@@ -11,6 +11,34 @@ from torchvision import transforms
 import torchvision.transforms.functional as F
 
 
+def transform_consistent():
+    transform = transforms.Compose([
+        RandomHorizontalFlip(consistent=True),
+        RandomCrop(size=112, consistent=True),
+        Scale(size=(112,112)),
+        # GaussianBlur(size=112, p=0.5, consistent=True),
+        # ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05, p=0.8),
+        # RandomGray(consistent=False, p=0.2),
+        # ToTensor(),
+        # Normalize()
+    ])
+    return transform
+
+
+def transform_inconsistent():
+    transform = transforms.Compose([
+        # RandomHorizontalFlip(consistent=True),
+        # RandomCrop(size=112, consistent=True),
+        # Scale(size=(112,112)),
+        GaussianBlur(size=112, p=0.5, consistent=True),
+        ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05, p=0.8),
+        RandomGray(consistent=False, p=0.2),
+        ToTensor(),
+        # Normalize()
+    ])
+    return transform
+
+
 def default_transform():
     transform = transforms.Compose([
         RandomHorizontalFlip(consistent=True),
