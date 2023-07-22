@@ -34,7 +34,7 @@ def transform_inconsistent():
         ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05, p=0.8),
         RandomGray(consistent=False, p=0.2),
         ToTensor(),
-        # Normalize()
+        Normalize()
     ])
     return transform
 
@@ -42,9 +42,9 @@ def transform_inconsistent():
 def default_transform():
     transform = transforms.Compose([
         RandomHorizontalFlip(consistent=True),
-        RandomCrop(size=128, consistent=True),
-        Scale(size=(128,128)),
-        GaussianBlur(size=128, p=0.5, consistent=True),
+        RandomCrop(size=112, consistent=True),
+        Scale(size=(112,112)),
+        GaussianBlur(size=112, p=0.5, consistent=True),
         # ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0), # DPC
         # RandomGray(consistent=False, p=0.5), # DPC
         ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05, p=0.8),

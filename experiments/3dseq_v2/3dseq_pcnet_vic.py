@@ -62,6 +62,7 @@ parser.add_argument('--closed_loop', action='store_true')
 parser.add_argument('--pred_hidden', default=4096, type=int)
 parser.add_argument('--projection', default=256, type=int)
 parser.add_argument('--pred_layer', default=2, type=int)
+parser.add_argument('--proj_layer', default=2, type=int)
 
 parser.add_argument('--mse_l', default=1.0, type=float)
 parser.add_argument('--std_l', default=1.0, type=float)
@@ -69,8 +70,11 @@ parser.add_argument('--cov_l', default=0.04, type=float)
 
 parser.add_argument('--bn_last', action='store_true')
 parser.add_argument('--pred_bn_last', action='store_true')
-parser.add_argument('--num_predictor', default=2, type=int)
 
+parser.add_argument('--num_predictor', default=1, type=int)
+parser.add_argument('--predictor', default=1, type=int)
+
+parser.add_argument('--infonce', action='store_true')
 
 def train_one_epoch(model, train_loader, optimizer, train=True):
     # global have_print
@@ -118,8 +122,13 @@ def main():
     
     model_select = PCNET_VIC
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_vic/hid%s_prj%s_np%s_il%s_ns%s/mse%s_std%s_cov%s_sym%s_closed%s/bs%s_lr%s_wd%s' \
-        % (args.pred_hidden, args.projection, args.num_predictor, args.inter_len, args.num_seq, args.mse_l, args.std_l, args.cov_l, args.sym_loss, args.closed_loop, args.batch_size, args.lr, args.wd)
+    if args.infonce:
+        ind_name = 'nce'
+    else:
+        ind_name = 'vic'
+
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_%s/hid%s_prj%s_prl%s_pre%s_np%s_pl%s_il%s_ns%s/mse%s_std%s_cov%s_sym%s_closed%s/bs%s_lr%s_wd%s' \
+        % (ind_name, args.pred_hidden, args.projection, args.proj_layer, args.predictor, args.num_predictor, args.pred_layer, args.inter_len, args.num_seq, args.mse_l, args.std_l, args.cov_l, args.sym_loss, args.closed_loop, args.batch_size, args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -144,7 +153,8 @@ def main():
         hidden_layer = 'avgpool',
         projection_size = args.projection,
         projection_hidden_size = args.pred_hidden,
-        num_layer = args.pred_layer,
+        pred_layer = args.pred_layer,
+        proj_layer = args.proj_layer,
         sym_loss = args.sym_loss,
         closed_loop = args.closed_loop,
         mse_l = args.mse_l,
@@ -152,7 +162,9 @@ def main():
         cov_l = args.cov_l,
         bn_last = args.bn_last,
         pred_bn_last = args.pred_bn_last,
-        num_predictor = args.num_predictor
+        predictor = args.predictor,
+        num_predictor = args.num_predictor,
+        infonce = args.infonce
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
@@ -160,12 +172,14 @@ def main():
     model = model.to(cuda)
 
     if args.pretrain:
-        pretrain_path = os.path.join(args.pretrain_folder, 'byolode_epoch%s.pth.tar' % args.start_epoch)
+        pretrain_path = os.path.join(args.pretrain_folder, 'pcnet_epoch%s.pth.tar' % args.start_epoch)
         model.load_state_dict(torch.load(pretrain_path)) # load model
     
 
     train_loader = get_data_ucf(batch_size=args.batch_size, 
                                 mode='train', 
+                                # transform_consistent = transform_consistent(),
+                                # transform_inconsistent = transform_inconsistent(),
                                 transform_consistent=None, 
                                 transform_inconsistent=default_transform(),
                                 seq_len=args.seq_len, 
@@ -177,6 +191,8 @@ def main():
                                 )
     test_loader = get_data_ucf(batch_size=args.batch_size, 
                                 mode='val',
+                                # transform_consistent = transform_consistent(),
+                                # transform_inconsistent = transform_inconsistent(),
                                 transform_consistent=None, 
                                 transform_inconsistent=default_transform(),
                                 seq_len=args.seq_len, 
@@ -212,7 +228,7 @@ def main():
                 ckpt_folder, 'resnet_epoch%s.pth.tar' % str(i+1))
             torch.save(resnet.state_dict(), checkpoint_path)
             checkpoint_path = os.path.join(
-                ckpt_folder, 'byolode_epoch%s.pth.tar' % str(i+1))
+                ckpt_folder, 'pcnet_epoch%s.pth.tar' % str(i+1))
             torch.save(model.state_dict(), checkpoint_path)
 
 

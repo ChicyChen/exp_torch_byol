@@ -98,6 +98,22 @@ def vic_reg_nonorm_loss(x, y, mse_l, std_l, cov_l): #same as paper
 
     return total_loss
 
+
+def infoNCE(nn, p, temperature=0.1):
+    nn = F.normalize(nn, dim=1)
+    p = F.normalize(p, dim=1)
+    # nn = gather_from_all(nn)
+    # p = gather_from_all(p)
+    logits = nn @ p.T
+    logits /= temperature
+    logits = logits.to(device='cuda')
+    n = p.shape[0]
+    labels = torch.arange(0, n, dtype=torch.long).to(device='cuda')
+    loss = F.cross_entropy(logits, labels)
+    return loss
+
+
+
 # exponential moving average
 
 class EMA():
@@ -153,11 +169,33 @@ def MLP_sub(dim, projection_size, hidden_size=4096, num_layer=2):
             nn.Linear(hidden_size, projection_size)
         )
 
-def MLP(dim, projection_size, hidden_size=4096, num_layer=2, bn_last=False, relu_last=False):
-    sub_module = MLP_sub(dim, projection_size, hidden_size, num_layer)
-    if bn_last:
-        sub_module.add_module("last_bn", nn.BatchNorm1d(projection_size))
-    return sub_module
+# def MLP(dim, projection_size, hidden_size=4096, num_layer=2, bn_last=False, relu_last=False):
+#     sub_module = MLP_sub(dim, projection_size, hidden_size, num_layer)
+#     if bn_last:
+#         sub_module.add_module("last_bn", nn.BatchNorm1d(projection_size))
+#     return sub_module
+
+class MLP(nn.Module):
+    def __init__(
+        self,
+        dim, 
+        projection_size, 
+        hidden_size=4096, 
+        num_layer=2, 
+        bn_last=False, 
+        relu_last=False
+    ):
+        super().__init__()
+        self.net = MLP_sub(dim, projection_size, hidden_size, num_layer)
+        if bn_last:
+            self.net.add_module("last_bn", nn.BatchNorm1d(projection_size))
+        self.relu_last = relu_last
+        
+    def forward(self, x, forward = True):
+        out = self.net(x)
+        if self.relu_last:
+            out = self.relu(out)
+        return out
 
 # residual MLP where relu could as the last layer
 class Res_MLP(nn.Module):
@@ -178,9 +216,38 @@ class Res_MLP(nn.Module):
             self.net.add_module("last_bn", nn.BatchNorm1d(projection_size))
         self.relu_last = relu_last
         
-    def forward(self, x):
+    def forward(self, x, forward = True):
         out = self.net(x)
         out += x
+        if self.relu_last:
+            out = self.relu(out)
+        return out
+
+# For the kind of predictor that predict backward or forward 
+class Res_MLP_D(nn.Module):
+    def __init__(
+        self,
+        dim, # input
+        projection_size, # output
+        hidden_size=4096, # hidden
+        num_layer=2, 
+        bn_last=False,
+        relu_last=False
+    ):
+        super().__init__()
+
+        self.relu = nn.ReLU(inplace=True)
+        self.net = MLP_sub(dim, projection_size, hidden_size, num_layer)
+        if bn_last:
+            self.net.add_module("last_bn", nn.BatchNorm1d(projection_size))
+        self.relu_last = relu_last
+        
+    def forward(self, x, forward = True):
+        out = self.net(x)
+        if forward:
+            out += x
+        else:
+            out -= x
         if self.relu_last:
             out = self.relu(out)
         return out
@@ -210,9 +277,15 @@ def ODE_sub(dim, projection_size, hidden_size=4096, num_layer=2):
         )
 
 class LatentODEfunc(nn.Module):
-    def __init__(self, projection_size=512, hidden_size=4096, num_layer=2, bn_last=False):
+    def __init__(
+            self, 
+            dim, 
+            projection_size=512, 
+            hidden_size=4096, 
+            num_layer=2, 
+            bn_last=False):
         super(LatentODEfunc, self).__init__()
-        self.func = ODE_sub(projection_size, projection_size, hidden_size, num_layer)
+        self.func = ODE_sub(dim, projection_size, hidden_size, num_layer)
         if bn_last:
             self.func.add_module("last_bn", nn.BatchNorm1d(projection_size))
 
@@ -221,24 +294,33 @@ class LatentODEfunc(nn.Module):
         return out
 
 class LatentODEblock(nn.Module):
-    def __init__(self, odefunc=LatentODEfunc, solver: str = 'dopri5',
-                 projection_size=512, hidden_size=4096, num_layer=2,
-                 rtol: float = 1e-4, atol: float = 1e-4, 
-                 adjoint: bool = False, bn_last: bool = False
-                 ):
+    def __init__(
+            self, 
+            dim, 
+            projection_size=512, 
+            hidden_size=4096, 
+            num_layer=2,
+            bn_last: bool = False,
+            relu_last: bool = False,
+            odefunc=LatentODEfunc, 
+            solver: str = 'dopri5',
+            rtol: float = 1e-4, 
+            atol: float = 1e-4, 
+            adjoint: bool = False
+            ):
         super().__init__()
-        self.odefunc = odefunc(projection_size=projection_size, hidden_size=hidden_size, num_layer=num_layer, bn_last=bn_last)
+        self.odefunc = odefunc(dim=dim, projection_size=projection_size, hidden_size=hidden_size, num_layer=num_layer, bn_last=bn_last)
         self.rtol = rtol
         self.atol = atol
         self.solver = solver
         self.use_adjoint = adjoint
         self.ode_method = odeint_adjoint if adjoint else odeint
-        self.integration_time_f = torch.tensor([0, 0.1], dtype=torch.float32)
-        self.integration_time_b = torch.tensor([0.1, 0], dtype=torch.float32)
+        self.integration_time_f = torch.tensor([0, 1.0], dtype=torch.float32)
+        self.integration_time_b = torch.tensor([1.0, 0], dtype=torch.float32)
 
-    def forward(self, x: torch.Tensor, integforward=True, integration_time=None):
+    def forward(self, x: torch.Tensor, forward=True, integration_time=None):
         if integration_time is None:
-            if integforward:
+            if forward:
                 integration_time = self.integration_time_f
             else:
                 integration_time = self.integration_time_b
@@ -248,7 +330,7 @@ class LatentODEblock(nn.Module):
             self.odefunc, x, integration_time, rtol=self.rtol,
             atol=self.atol, method=self.solver)
         # print(out.size())
-        return out
+        return out[1:] # omit the first output
 
 
 # a wrapper class for the base neural network
@@ -295,8 +377,11 @@ class NetWrapper(nn.Module):
     @singleton('projector')
     def _get_projector(self, hidden):
         _, dim = hidden.shape # input dimension
-        create_mlp_fn = MLP if not self.use_simsiam_mlp else SimSiamMLP
-        projector = create_mlp_fn(dim, self.projection_size, self.projection_hidden_size, self.num_layer, self.bn_last)
+        if self.num_layer > 0:
+            create_mlp_fn = MLP if not self.use_simsiam_mlp else SimSiamMLP
+            projector = create_mlp_fn(dim, self.projection_size, self.projection_hidden_size, self.num_layer, self.bn_last)
+        else:
+            projector = nn.Identity()
         return projector.to(hidden)
 
     def get_representation(self, x):
