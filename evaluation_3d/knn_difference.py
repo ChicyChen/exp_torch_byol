@@ -1,73 +1,76 @@
 import numpy as np
 import torch
 import torch.nn as nn
-
-from torchvision import transforms as T
-from torchvision.datasets import CIFAR10
-from torch.utils.data import DataLoader
-
-import copy
-import torch.nn.functional as F
+import os
 
 from torch.optim.optimizer import Optimizer, required
 from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import KNeighborsClassifier
 
+import torch.nn.functional as F
 
 
-"""# KNN evaluation to track classification accuray through ssl pretraining"""
-
-
-class KNN():
-    def __init__(self, model, k, device, input_num=2, byol=True):
-        super(KNN, self).__init__()
+class KNN_Difference():
+    def __init__(self, model, device, k=1, input_num=500, only_diff=False):
+        super(KNN_Difference, self).__init__()
         self.k = k
+        self.only_diff = only_diff
         self.device = device
         self.input_num = input_num
         self.model = model.to(device)
         self.model.eval()
-        self.byol = byol
+        
 
-    def extract_features(self, loader, test=False):
-        """
-        Infer/Extract features from a trained model
-        Args:
-            loader: train or test loader
-        Returns: 3 tensors of all:  input_images, features , labels
-        """
-        x_lst = []
+    def extract_knn_features(self, loader):
+        # projections = []
         features = []
         label_lst = []
 
         with torch.no_grad():
-            
+            ni = 0
             for data_i in loader:
-                if self.input_num == 2:
-                    input_tensor, input_tensor2, label = data_i
-                else:
-                    input_tensor, label = data_i
-                if self.byol:
-                    h = self.model.get_representation(input_tensor.to(self.device))
-                else:
-                    h = self.model(input_tensor.to(self.device))
-                    h = h.reshape(h.shape[0], -1)
-                    # print(h.shape)
-                features.append(h)
-                x_lst.append(input_tensor)
+                
+                input_tensor, label = data_i # B, N, C, T, H, W
+                B, N, C, T, H, W = input_tensor.shape
+                input_tensor = input_tensor.view(B*N, C, T, H, W)
+                _, z = self.model(input_tensor.to(self.device))
+                # h = h.reshape(B, N, -1)
+                z = z.reshape(B, N, -1)
+                # projections.append(h)
+                features.append(z)
                 label_lst.append(label)
+                ni += 1
+                if ni >= self.input_num:
+                    break
 
-                # if not test:
-                #     h2 = self.model.get_representation(input_tensor2.to(self.device))
-                #     features.append(h2)
-                #     x_lst.append(input_tensor2)
-                #     label_lst.append(label)
+            # h_total = torch.stack(projections) # Bn, B, N, -1
+            z_total = torch.stack(features) # Bn, B, N, -1
+            label_total = torch.stack(label_lst).view(-1)
+            # print(h_total.shape)
+            # print(z_total.shape)
 
-            x_total = torch.stack(x_lst)
-            h_total = torch.stack(features)
-            label_total = torch.stack(label_lst)
+        # proj_dim = h_total.shape[-1]
+        feature_dim = z_total.shape[-1]
+        # h_total = h_total.view(-1, N, proj_dim)
+        z_total = z_total.view(-1, N, feature_dim)
+        # print(z_total.shape)
 
-            return x_total, h_total, label_total
+        z_total = z_total[:,:2,:] # n, 2, -1
+        z_diff = z_total[:,1:,:] - z_total[:,:-1,:] # n, 1, -1
+        z_diff = z_diff.squeeze(1) # n, -1
 
+        # z_mask = z_diff[:, 0] > 0
+        # z_mask = z_mask.unsqueeze(1)
+        # z_diff = 2 * z_diff * z_mask - z_diff # convert direction
+        # # print(z_diff.shape)
+        # z_diff = z_diff / torch.norm(z_diff, dim=0, keepdim=True)
+
+        if self.only_diff:
+            return z_diff, label_total
+        z_concate = torch.cat((z_total[:, 0, :], z_diff), dim=1) # n, -1
+        # print(z_concate.shape)
+        return z_concate, label_total
+    
     def knn(self, features, labels, k=1):
         """
         Evaluating knn accuracy in feature space.
@@ -105,10 +108,17 @@ class KNN():
 
     def fit(self, train_loader, test_loader=None):
         with torch.no_grad():
-            x_train, h_train, l_train = self.extract_features(train_loader)
+            h_train, l_train = self.extract_knn_features(train_loader)
             train_acc = self.knn(h_train, l_train, k=self.k)
 
             if test_loader is not None:
-                x_test, h_test, l_test = self.extract_features(test_loader, test=True)
+                h_test, l_test = self.extract_knn_features(test_loader)
                 test_acc = self.eval(h_test, l_test)
                 return train_acc, test_acc
+            
+
+
+
+    
+
+    

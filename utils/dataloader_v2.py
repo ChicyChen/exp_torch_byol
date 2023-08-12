@@ -62,7 +62,7 @@ def get_data_ucf(transform_consistent=None,
     if not ddp:
         sampler = data.RandomSampler(dataset)
     else:
-        sampler = data.distributed.DistributedSampler(dataset)
+        sampler = data.distributed.DistributedSampler(dataset, shuffle=True)
 
     if mode == 'train':
         data_loader = data.DataLoader(dataset,

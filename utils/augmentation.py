@@ -53,6 +53,21 @@ def default_transform():
         Normalize()
     ])
     return transform
+
+def default_transform2():
+    transform = transforms.Compose([
+        RandomHorizontalFlip(consistent=True),
+        RandomCrop(size=224, consistent=True),
+        Scale(size=(224,224)),
+        GaussianBlur(size=224, p=0.5, consistent=True),
+        # ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0), # DPC
+        # RandomGray(consistent=False, p=0.5), # DPC
+        ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05, p=0.8),
+        RandomGray(consistent=False, p=0.2),
+        ToTensor(),
+        Normalize()
+    ])
+    return transform
     
 
 class GaussianBlur:
@@ -78,7 +93,7 @@ class Padding:
 
 class Scale:
     def __init__(self, size, interpolation=Image.NEAREST):
-        assert isinstance(size, int) or (isinstance(size, collections.Iterable) and len(size) == 2)
+        assert isinstance(size, int) or (isinstance(size, collections.abc.Iterable) and len(size) == 2)
         self.size = size
         self.interpolation = interpolation
 

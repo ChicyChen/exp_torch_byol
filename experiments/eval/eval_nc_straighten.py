@@ -31,18 +31,19 @@ parser.add_argument('--gpu', default='0', type=str)
 parser.add_argument('--batch_size', default=1, type=int)
 parser.add_argument('--hmdb', action='store_true')
 parser.add_argument('--random', action='store_true')
+parser.add_argument('--kinetics', action='store_true')
 
 parser.add_argument('--ckpt_folder', default='checkpoints/3dbase_ucf101_lr0.0001_wd1e-05', type=str)
 parser.add_argument('--epoch_num', default=100, type=int)
 
-parser.add_argument('--num_seq', default=4, type=int)
-parser.add_argument('--seq_len', default=4, type=int)
+parser.add_argument('--num_seq', default=3, type=int)
+parser.add_argument('--seq_len', default=8, type=int)
 parser.add_argument('--downsample', default=4, type=int)
 parser.add_argument('--num_aug', default=1, type=int)
 
 parser.add_argument('--ode', action='store_true')
 
-parser.add_argument('--num_batch', default=100, type=int)
+parser.add_argument('--num_batch', default=10000, type=int)
 parser.add_argument('--straighten', action='store_true')
 parser.add_argument('--pca', action='store_true')
 parser.add_argument('--proj_dim', default=100, type=int)
@@ -80,13 +81,13 @@ def perform_nc_straighten(model, train_loader, test_loader):
     x_test, labels_test = ssl_evaluator.extract_data(test_loader, args.num_batch)
 
     if args.vis_pca:
-        ssl_evaluator.visualize_latent_pca(x_train, labels_train, args.seq_len, args.num_seq, "train.png")
-        ssl_evaluator.visualize_latent_pca(x_test, labels_test, args.seq_len, args.num_seq, "test.png")
+        ssl_evaluator.visualize_latent_pca(x_train, labels_train, args.seq_len, args.num_seq, os.path.join(args.ckpt_folder, "train.png"))
+        ssl_evaluator.visualize_latent_pca(x_test, labels_test, args.seq_len, args.num_seq,os.path.join(args.ckpt_folder,  "test.png"))
         return
 
     if args.vis_class:
-        ssl_evaluator.visualize_class(x_train, labels_train, args.seq_len, args.num_seq, "class_train.png")
-        ssl_evaluator.visualize_class(x_test, labels_test, args.seq_len, args.num_seq, "class_test.png")
+        ssl_evaluator.visualize_class(x_train, labels_train, args.seq_len, args.num_seq, os.path.join(args.ckpt_folder, "class_train.png"))
+        ssl_evaluator.visualize_class(x_test, labels_test, args.seq_len, args.num_seq, os.path.join(args.ckpt_folder, "class_test.png"))
         return
 
     if not args.straighten:
@@ -169,7 +170,13 @@ def main():
     global cuda
     cuda = torch.device('cuda')
 
-    resnet = models.video.r3d_18()
+    if not args.kinetics:
+        resnet = models.video.r3d_18()
+        # modify model
+        # resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+    else:
+        resnet = models.video.r3d_18(pretrained=True)
+    # resnet = models.video.r3d_18()
     # modify model
     # resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
     # resnet.maxpool = torch.nn.Identity()
@@ -222,7 +229,9 @@ def main():
         # print(resnet)
         resnet.fc = torch.nn.Identity()
         perform_nc_straighten(resnet, train_loader, test_loader)
-
+    elif args.kinetics:
+        logging.info(f"k-nn accuracy performed with kinetics weight\n")
+        perform_nc_straighten(resnet, train_loader, test_loader)
     else:
         # after training
         logging.info(f"k-nn accuracy performed after ssl\n")

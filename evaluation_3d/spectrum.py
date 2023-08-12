@@ -26,11 +26,12 @@ import matplotlib.pyplot as plt
 
 
 class Spectrum():
-    def __init__(self, model, device):
+    def __init__(self, model, device, return_dim = 512):
         super(Spectrum, self).__init__()
         self.device = device
         self.model = model.to(device)
         self.model.eval()
+        self.return_dim = return_dim
 
     def extract_data(self, loader):
         x_lst = []
@@ -101,13 +102,17 @@ class Spectrum():
     def singular(self, loader):
         h_total, z_total, _ = self.extract_projection_feature(loader)
 
-        h = torch.nn.functional.normalize(h_total, dim=1)
-        z = torch.nn.functional.normalize(z_total, dim=1)
+        # h = torch.nn.functional.normalize(h_total, dim=1)
+        # z = torch.nn.functional.normalize(z_total, dim=1)
+        # print(h_total.shape) # N, D
+        h = h_total - torch.mean(h_total, dim=1, keepdim=True)
+        z = z_total - torch.mean(z_total, dim=1, keepdim=True)
 
         # calculate covariance of projection
         h = h.cpu().detach().numpy()
-        h = np.transpose(h)
+        h = np.transpose(h) # D, N
         ch = np.cov(h)
+        # print(h.shape, ch.shape) # D, N; D, D
         _, dh, _ = np.linalg.svd(ch)
 
         # calculate covariance of representation
@@ -116,7 +121,9 @@ class Spectrum():
         cz = np.cov(z)
         _, dz, _ = np.linalg.svd(cz)
 
-        return dh, dz
+        return_dim = self.return_dim
+
+        return dh[:return_dim], dz[:return_dim]
     
     def visualize(self, loader, fpath, epoch_num, mode='train', log=False):
         dh, dz = self.singular(loader)

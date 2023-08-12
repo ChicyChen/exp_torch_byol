@@ -215,6 +215,7 @@ class NC():
                 out_i_pca=out_total_pca[i*num_seq:(i+1)*num_seq] # num_seq, 3
                 ax.scatter3D(out_i_pca[:,0], out_i_pca[:,1], out_i_pca[:,2], color=c)
                 ax.plot3D(out_i_pca[:,0], out_i_pca[:,1], out_i_pca[:,2], color=c)
+                
 
             plt.savefig(fname)
         return
@@ -236,25 +237,29 @@ class NC():
         with torch.no_grad():
             # print(len(x))
             for i in range(len(x)):
-                seq_i = x[i] # 1, C, T, H, W
+                seq_i = x[i] # B = 1, C, T, H, W
                 # print(seq_i.shape)
                 _, C, T, H, W = seq_i.shape
                 seq_i = seq_i.reshape(C, num_seq, seq_len, H, W)
                 seq_i = seq_i.to(self.device)
                 seq_i = seq_i.permute(1,0,2,3,4) # num_seq, C, seq_len, H, W
                 out_i = self.model(seq_i) # num_seq, N
+                # print(out_i.shape)
 
                 # seq_list.append(np.mean(seq_i, axis=0))
                 mean_i = torch.mean(out_i, axis=0)
                 # print(mean_i.size())
-                out_list.append(torch.mean(out_i, axis=1))
+                out_list.append(torch.mean(out_i, axis=0))
                 
 
             # seq_total = torch.stack(seq_list).reshape(len(x), C*seq_len*H*W)
             out_total = torch.stack(out_list).reshape(len(x), -1) # len(x)*num_seq, N
+            # print(out_total.shape)
 
-            U,S,V = torch.pca_lowrank(out_total, q=None, center=True, niter=3) # V: *, N
+            U,S,V = torch.pca_lowrank(out_total, q=10, center=True, niter=3) # V: *, N
+            print(S)
             out_total_pca=torch.matmul(out_total, V[:, :3]).cpu().numpy() # len(x)*num_seq, 3
+            # print(out_total_pca.shape)
 
             for i in range(len(x)):
                 c = colors[labels[i]]
@@ -265,6 +270,8 @@ class NC():
                 plt.scatter(out_i_pca[0], out_i_pca[1], color=c)
                 # ax.plot3D(out_i_pca[:,0], out_i_pca[:,1], out_i_pca[:,2], color=c)
 
+            ax = plt.gca()
+            ax.set_aspect('equal')
             plt.savefig(fname)
         return
 

@@ -32,12 +32,12 @@ from augmentation import *
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--frame_root', default='/data', type=str,
+parser.add_argument('--frame_root', default='/home/siyich/Datasets/Videos', type=str,
                     help='root folder to store data like UCF101/..., better to put in servers SSD \
                     default path is mounted from data server for the home directory')
 # --frame_root /data
                     
-parser.add_argument('--gpu', default='0,1,2,3,4,5,6,7', type=str)
+parser.add_argument('--gpu', default='0,1,2,3', type=str)
 
 parser.add_argument('--epochs', default=100, type=int,
                     help='number of total epochs to run')
@@ -46,7 +46,7 @@ parser.add_argument('--start-epoch', default=0, type=int,
 parser.add_argument('--pretrain_folder', default='', type=str)
 parser.add_argument('--pretrain', action='store_true')
 
-parser.add_argument('--batch_size', default=256, type=int)
+parser.add_argument('--batch_size', default=16, type=int)
 parser.add_argument('--lr', default=1e-4, type=float, help='learning rate')
 parser.add_argument('--wd', default=1e-5, type=float, help='weight decay')
 
@@ -60,14 +60,13 @@ parser.add_argument('--sym_loss', action='store_true')
 parser.add_argument('--closed_loop', action='store_true')
 
 
-parser.add_argument('--projection', default=512, type=int)
+parser.add_argument('--projection', default=256, type=int)
 parser.add_argument('--proj_hidden', default=4096, type=int)
 parser.add_argument('--pred_hidden', default=4096, type=int)
 parser.add_argument('--pred_layer', default=2, type=int)
 parser.add_argument('--proj_layer', default=2, type=int)
 
 parser.add_argument('--mse_l', default=1.0, type=float)
-parser.add_argument('--loop_l', default=0.0, type=float)
 parser.add_argument('--std_l', default=1.0, type=float)
 parser.add_argument('--cov_l', default=0.04, type=float)
 
@@ -78,10 +77,6 @@ parser.add_argument('--num_predictor', default=1, type=int)
 parser.add_argument('--predictor', default=1, type=int)
 
 parser.add_argument('--infonce', action='store_true')
-
-parser.add_argument('--sub_loss', action='store_true')
-parser.add_argument('--sub_frac', default=0.2, type=float)
-parser.add_argument('--reg_all', action='store_true')
 
 def train_one_epoch(model, train_loader, optimizer, train=True):
     # global have_print
@@ -134,8 +129,8 @@ def main():
     else:
         ind_name = 'vic'
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_%s_debug_sub%s/hid%s_hidpre%s_prj%s_prl%s_pre%s_np%s_pl%s_il%s_ns%s/mse%s_std%s_cov%s_sym%s_closed%s/bs%s_lr%s_wd%s' \
-        % (ind_name, args.sub_loss, args.proj_hidden, args.pred_hidden, args.projection, args.proj_layer, args.predictor, args.num_predictor, args.pred_layer, args.inter_len, args.num_seq, args.mse_l, args.std_l, args.cov_l, args.sym_loss, args.closed_loop, args.batch_size, args.lr, args.wd)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_%s/hid%s_hidpre%s_prj%s_prl%s_pre%s_np%s_pl%s_il%s_ns%s/mse%s_std%s_cov%s_sym%s_closed%s/bs%s_lr%s_wd%s' \
+        % (ind_name, args.proj_hidden, args.pred_hidden, args.projection, args.proj_layer, args.predictor, args.num_predictor, args.pred_layer, args.inter_len, args.num_seq, args.mse_l, args.std_l, args.cov_l, args.sym_loss, args.closed_loop, args.batch_size, args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
@@ -166,16 +161,13 @@ def main():
         sym_loss = args.sym_loss,
         closed_loop = args.closed_loop,
         mse_l = args.mse_l,
-        loop_l = args.loop_l,
         std_l = args.std_l,
         cov_l = args.cov_l,
         bn_last = args.bn_last,
         pred_bn_last = args.pred_bn_last,
         predictor = args.predictor,
         num_predictor = args.num_predictor,
-        infonce = args.infonce,
-        sub_loss = args.sub_loss,
-        sub_frac = args.sub_frac
+        infonce = args.infonce
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)

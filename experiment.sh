@@ -1,23 +1,39 @@
 #!/bin/bash
 
-gpu='0,1,2,3,4,5,6,7'
-frame_root='/data'
+# gpu='0,1,2,3,4,5,6,7'
+# frame_root='/data'
 
-pretrain_folder='checkpoints_vic/hid4096_prj256_prl2_pre3_np1_pl2_il0_ns2/mse1.0_std1.0_cov0.04_symTrue_closedFalse/bs256_lr0.0001_wd1e-05'
-python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --num_seq 2 --predictor 3 --num_predictor 1 --pretrain --pretrain_folder $pretrain_folder --start-epoch 50
+# # byol
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --predictor 1 --num_predictor 1 --sym_loss --projection 64 --proj_hidden 1024 --pred_hidden 1024
+# vicreg
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --predictor 1 --num_predictor 1 --sym_loss --projection 2048 --proj_hidden 2048 --proj_layer 3 --pred_hidden 2048 --pred_layer 0
+# # others
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --predictor 1 --num_predictor 1 --sym_loss --projection 2048 --pred_hidden 2048
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --predictor 1 --num_predictor 1 --sym_loss --projection 2048 --pred_hidden 4096
 
-python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --num_seq 2 --predictor 1 --num_predictor 1
-# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 128 --num_seq 3 --predictor 1 --num_predictor 1 --sym_loss --closed_loop
-# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 128 --num_seq 3 --predictor 1
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --predictor 1 --num_predictor 1 --sym_loss --projection 512 --pred_hidden 128
 
-python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --num_seq 2 --predictor 1 --num_predictor 2 --closed_loop
-# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 128 --num_seq 3 --predictor 1 --num_predictor 2 --closed_loop
-# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 128 --num_seq 3 --predictor 1 --num_predictor 2 --sym_loss --closed_loop
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --predictor 1 --num_predictor 1 --sym_loss --projection 1024 --pred_hidden 4096
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --predictor 1 --num_predictor 1 --sym_loss --projection 1024 --pred_hidden 1024
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --predictor 1 --num_predictor 1 --sym_loss --projection 1024 --pred_hidden 256
 
-python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --num_seq 2 --predictor 2 --num_predictor 1 --closed_loop
-python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --num_seq 2 --predictor 2 --num_predictor 1 --sym_loss --closed_loop
-# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 128 --num_seq 3 --predictor 2 --num_predictor 1 --closed_loop
-# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 128 --num_seq 3 --predictor 2 --num_predictor 1 --sym_loss --closed_loop
-# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 128 --num_seq 3 --predictor 2 --num_predictor 1
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --predictor 1 --num_predictor 1 --sym_loss --projection 4096 --pred_hidden 4096
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --predictor 1 --num_predictor 1 --sym_loss --projection 4096 --pred_hidden 1024
 
-# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 128 --num_seq 3 --predictor 0 --num_predictor 1 --sym_loss
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --predictor 1 --num_predictor 1 --sym_loss --projection 512 --proj_layer 0 --pred_hidden 512
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --predictor 1 --num_predictor 1 --sym_loss --projection 512 --proj_layer 0 --pred_hidden 64
+
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --predictor 1 --num_predictor 2 --sym_loss --projection 2048 --pred_hidden 512
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --predictor 3 --num_predictor 1 --sym_loss --projection 2048 --pred_hidden 512
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --gpu $gpu --frame_root $frame_root --batch_size 256 --predictor 3 --num_predictor 2 --sym_loss --projection 2048 --pred_hidden 512
+
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --batch_size 256 --sym_loss --projection 2048 --pred_hidden 512 --pred_layer 2
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --frame_root $frame_root --gpu $gpu --batch_size 256 --sym_loss --projection 2048 --pred_hidden 512 --pred_layer 0
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --frame_root $frame_root --gpu $gpu --batch_size 256 --sym_loss --projection 2048 --pred_hidden 2048 --pred_layer 0 --proj_layer 3 
+# python experiments/3dseq_v2/3dseq_pcnet_vic.py --frame_root $frame_root --gpu $gpu --batch_size 256 --sym_loss --projection 2048 --pred_hidden 2048 --proj_hidden 2048 --pred_layer 0 --proj_layer 3 
+
+torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 25.6
+torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 19.2
+torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 12.8
+torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 9.6
+torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 6.4
