@@ -193,8 +193,8 @@ class PCNET_VIC(nn.Module):
         
         if self.reg_all:
             gt_z_all = gt_z_all.reshape(-1,D)
-            std_lo = std_loss(gt_z_all)
-            cov_lo = cov_loss(gt_z_all)
+            std_lo = std_loss(gt_z_all) * 2
+            cov_lo = cov_loss(gt_z_all) * 2
         else:
             std_lo = 0.0
             cov_lo = 0.0

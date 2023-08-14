@@ -32,8 +32,25 @@
 # python experiments/3dseq_v2/3dseq_pcnet_vic.py --frame_root $frame_root --gpu $gpu --batch_size 256 --sym_loss --projection 2048 --pred_hidden 2048 --pred_layer 0 --proj_layer 3 
 # python experiments/3dseq_v2/3dseq_pcnet_vic.py --frame_root $frame_root --gpu $gpu --batch_size 256 --sym_loss --projection 2048 --pred_hidden 2048 --proj_hidden 2048 --pred_layer 0 --proj_layer 3 
 
-torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 25.6
-torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 19.2
-torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 12.8
-torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 9.6
-torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 6.4
+# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 9.6
+# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 4.8
+# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 4.8 --infonce --proj_layer 2 --projection 128 --proj_hidden 4096 
+
+# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 4.8 --r21d
+# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 4.8 --infonce --proj_layer 3 --projection 128 --proj_hidden 2048 --r21d
+# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_byol_r3d18.py --sym_loss --base_lr 4.8 --r21d
+
+# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 4.8 --downsample 4
+# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 4.8 --infonce --proj_layer 3 --projection 128 --proj_hidden 2048 --downsample 4
+# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_byol_r3d18.py --sym_loss --base_lr 4.8 --downsample 4
+
+# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 4.8 --downsample 3
+# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss --base_lr 4.8 --infonce --proj_layer 3 --projection 128 --proj_hidden 2048 --downsample 3
+# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_byol_r3d18.py --sym_loss --base_lr 4.8 --downsample 3
+
+torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_byol_r3d18.py --sym_loss --base_lr 4.8 --proj_hidden 2048 --pred_hidden 2048 --downsample 3
+torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_byol_r3d18.py --sym_loss --base_lr 4.8 --proj_hidden 2048 --pred_hidden 2048 --downsample 4
+torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_byol_r3d18.py --sym_loss --base_lr 4.8 --proj_hidden 2048 --pred_hidden 2048 --downsample 8
+
+
+

@@ -35,7 +35,7 @@ from augmentation import *
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--frame_root', default='/home/siyich/Datasets/Videos', type=str,
+parser.add_argument('--frame_root', default='/data', type=str,
                     help='root folder to store data like UCF101/..., better to put in servers SSD \
                     default path is mounted from data server for the home directory')
 # --frame_root /data
@@ -70,6 +70,8 @@ def test_transform():
     return transform
 
 
+def exclude_bias_and_norm(p):
+    return p.ndim == 1
     
 
 def main():
@@ -111,8 +113,8 @@ def main():
         image_size = 112,
         hidden_layer = 'avgpool',
         projection_size = 2048,
-        projection_hidden_size = 4096,
-        pred_hidden_size = 2048,
+        projection_hidden_size = 2048,
+        pred_hidden_size = 512,
         num_predictor = 1,
         pred_layer = 0,
         predictor = 1,
@@ -168,7 +170,9 @@ def main():
     else:
         # after training
         print("diff with ssl")
-        model.load_state_dict(torch.load(ckpt_path)) # load model
+        # model.load_state_dict(torch.load(ckpt_path)) # load model
+        ckpt = torch.load(ckpt_path, map_location="cpu")
+        model.load_state_dict(ckpt["model"])
 
     if args.byol:
         ssl_evaluator = Difference(model=model.module.online_encoder, device=cuda, input_num=args.input_num)

@@ -54,7 +54,7 @@ parser.add_argument('--wd', default=1e-3, type=float, help='weight decay')
 parser.add_argument('--dropout', default=0.5, type=float)
 
 parser.add_argument('--num_seq', default=1, type=int)
-parser.add_argument('--seq_len', default=16, type=int)
+parser.add_argument('--seq_len', default=8, type=int)
 parser.add_argument('--downsample', default=8, type=int)
 parser.add_argument('--num_aug', default=1, type=int)
 

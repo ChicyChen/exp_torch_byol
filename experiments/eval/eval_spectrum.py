@@ -37,7 +37,7 @@ parser.add_argument('--frame_root', default='/home/siyich/Datasets/Videos', type
 # --frame_root /data
 parser.add_argument('--num_seq', default=1, type=int)
 parser.add_argument('--seq_len', default=8, type=int)
-parser.add_argument('--downsample', default=4, type=int)
+parser.add_argument('--downsample', default=8, type=int)
 parser.add_argument('--inter_len', default=0, type=int)    # does not need to be positive
 
 parser.add_argument('--gpu', default='1', type=str)

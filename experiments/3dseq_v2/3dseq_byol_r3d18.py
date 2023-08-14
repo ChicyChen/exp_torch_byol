@@ -4,10 +4,12 @@ from importlib import reload
 # reload(sys)
 # sys.setdefaultencoding('utf-8')
 import argparse
-sys.path.append("/home/siyich/byol-pytorch/pcnet_3d")
+# sys.path.append("/home/siyich/byol-pytorch/pcnet_3d")
+sys.path.append("/home/siyich/byol-pytorch/byol_3d")
 sys.path.append("/home/siyich/byol-pytorch/utils")
 # sys.path.append("/home/siyich/byol-pytorch/resnet")
-from pcnet_vic import PCNET_VIC
+# from pcnet_vic import PCNET_VIC
+from byolseq_3d import BYOL_SEQ
 # from resnet_modify import r3d_18_slow
 
 import math
@@ -31,8 +33,8 @@ import matplotlib.pyplot as plt
 from augmentation import *
 from distributed_utils import init_distributed_mode
 
-# python -m torch.distributed.launch --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py
-# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py
+# python -m torch.distributed.launch --nproc_per_node=8 experiments/3dseq_v2/3dseq_byol_r3d18.py --sym_loss
+# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_byol_r3d18.py --sym_loss
 
 parser = argparse.ArgumentParser()
 
@@ -64,16 +66,16 @@ parser.add_argument('--sym_loss', action='store_true')
 parser.add_argument('--closed_loop', action='store_true')
 
 # parser.add_argument('--feature_size', default=512, type=int)
-parser.add_argument('--projection', default=2048, type=int)
-parser.add_argument('--proj_hidden', default=2048, type=int)
-parser.add_argument('--pred_hidden', default=512, type=int)
-parser.add_argument('--pred_layer', default=0, type=int)
-parser.add_argument('--proj_layer', default=3, type=int)
+parser.add_argument('--projection', default=256, type=int)
+parser.add_argument('--proj_hidden', default=4096, type=int)
+parser.add_argument('--pred_hidden', default=4096, type=int)
+parser.add_argument('--pred_layer', default=2, type=int)
+parser.add_argument('--proj_layer', default=2, type=int)
 
 parser.add_argument('--mse_l', default=1.0, type=float)
-parser.add_argument('--loop_l', default=0.0, type=float)
-parser.add_argument('--std_l', default=1.0, type=float)
-parser.add_argument('--cov_l', default=0.04, type=float)
+# parser.add_argument('--loop_l', default=0.0, type=float)
+parser.add_argument('--std_l', default=0.0, type=float)
+parser.add_argument('--cov_l', default=0.0, type=float)
 
 parser.add_argument('--bn_last', action='store_true')
 parser.add_argument('--pred_bn_last', action='store_true')
@@ -99,8 +101,8 @@ parser.add_argument('--world-size', default=1, type=int,
 parser.add_argument('--dist-url', default='env://',
                     help='url used to set up distributed training')
 
+parser.add_argument('--ema', default=0.996, type=float, help='EMA')
 parser.add_argument('--r21d', action='store_true')
-
 
 def adjust_learning_rate(args, optimizer, loader, step):
     max_steps = args.epochs * len(loader)
@@ -178,7 +180,7 @@ class LARS(optim.Optimizer):
                 p.add_(mu, alpha=-g["lr"])
 
 
-def train_one_epoch(args, model, train_loader, optimizer, epoch, gpu=None, scaler=None, train=True):
+def train_one_epoch(args, model, train_loader, optimizer, epoch, gpu=None, scaler=None, train = True, num_aug = 1):
     # global have_print
 
     if train:
@@ -188,39 +190,38 @@ def train_one_epoch(args, model, train_loader, optimizer, epoch, gpu=None, scale
     total_loss = 0.
     num_batches = len(train_loader)
 
-    # for data in train_loader:
     for step, data in enumerate(train_loader, start=epoch * len(train_loader)):
-        video, label = data # B, N, C, T, H, W
+        
+        video, label = data # B, C, T, H, W
         label = label.to(gpu)
-        video = video.to(gpu)
-        # print(video.shape)
 
         lr = adjust_learning_rate(args, optimizer, train_loader, step)
 
-        # if not have_print:
-        #     print(images.size(), images2.size())
-        #     have_print = True
+        for i in range(args.num_seq-1):
+            # index1 = i*args.seq_len
+            # index2 = (i+1)*args.seq_len
+            # index3 = (i+2)*args.seq_len
+            images = video[:, i, :, :, :, :]
+            images2 = video[:, i+1, :, :, :, :]
+            images = images.to(gpu)
+            images2 = images2.to(gpu)
 
-        optimizer.zero_grad()
-        # loss = model(video)
-        with torch.cuda.amp.autocast():
-            loss = model(video)
-            # print(loss)
-            if train:
-                scaler.scale(loss).backward()
-                scaler.step(optimizer)
-                scaler.update()
-        # if train: # train separately for each step
-        #     # loss.sum().backward()
-        #     loss.mean().backward()
-        #     optimizer.step()
-        # else:
-        #     pass
-        # total_loss += loss.sum().item() 
-        total_loss += loss.mean().item() 
+            # print(images.shape)
 
+            optimizer.zero_grad()
+            with torch.cuda.amp.autocast():
+                loss = model(images, images2)
+                # print(loss)
+                if train:
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
+                    # EMA update
+                    model.module.update_moving_average()
+            total_loss += loss.sum().item() / (args.num_seq-1)
     
     return total_loss/num_batches
+
 
 def main():
     torch.manual_seed(233)
@@ -233,12 +234,12 @@ def main():
     print(args)
     gpu = torch.device(args.device)
     
-    model_select = PCNET_VIC
+    # model_select = PCNET_VIC
 
-    if args.infonce:
-        ind_name = 'nce'
-    else:
-        ind_name = 'pcn'
+    # if args.infonce:
+    #     ind_name = 'nce'
+    # else:
+    ind_name = 'byol'
 
     if args.r21d:
         model_name = 'r21d18'
@@ -253,35 +254,57 @@ def main():
     if args.rank == 0:
         if not os.path.exists(ckpt_folder):
             os.makedirs(ckpt_folder)
-        logging.basicConfig(filename=os.path.join(ckpt_folder, 'pcnet_vic_train.log'), level=logging.INFO)
+        logging.basicConfig(filename=os.path.join(ckpt_folder, 'byol_train.log'), level=logging.INFO)
         logging.info('Started')
-   
 
-    model = model_select(
+    # resnet = models.video.r3d_18() 
+
+    model = BYOL_SEQ(
         resnet,
         clip_size = args.seq_len,
         # image_size = 224,
         image_size = 112,
         hidden_layer = 'avgpool',
         projection_size = args.projection,
-        projection_hidden_size = args.proj_hidden,
-        pred_hidden_size = args.pred_hidden,
-        pred_layer = args.pred_layer,
-        proj_layer = args.proj_layer,
-        sym_loss = args.sym_loss,
+        projection_hidden_size = args.pred_hidden,
+        num_layer=args.pred_layer,
+        moving_average_decay = args.ema,
+        asym_loss = not args.sym_loss,
         closed_loop = args.closed_loop,
         mse_l = args.mse_l,
-        loop_l = args.loop_l,
         std_l = args.std_l,
         cov_l = args.cov_l,
+        # use_momentum = not args.no_mom,
+        # use_projector = not args.no_projector,
+        # use_simsiam_mlp = args.use_simsiam_mlp,
         bn_last = args.bn_last,
-        pred_bn_last = args.pred_bn_last,
-        predictor = args.predictor,
-        num_predictor = args.num_predictor,
-        infonce = args.infonce,
-        sub_loss = args.sub_loss,
-        sub_frac = args.sub_frac
+        pred_bn_last = args.pred_bn_last
     ).cuda(gpu)
+
+    # model = model_select(
+    #     resnet,
+    #     clip_size = args.seq_len,
+    #     image_size = 112,
+    #     hidden_layer = 'avgpool',
+    #     projection_size = args.projection,
+    #     projection_hidden_size = args.proj_hidden,
+    #     pred_hidden_size = args.pred_hidden,
+    #     pred_layer = args.pred_layer,
+    #     proj_layer = args.proj_layer,
+    #     sym_loss = args.sym_loss,
+    #     closed_loop = args.closed_loop,
+    #     mse_l = args.mse_l,
+    #     loop_l = args.loop_l,
+    #     std_l = args.std_l,
+    #     cov_l = args.cov_l,
+    #     bn_last = args.bn_last,
+    #     pred_bn_last = args.pred_bn_last,
+    #     predictor = args.predictor,
+    #     num_predictor = args.num_predictor,
+    #     infonce = args.infonce,
+    #     sub_loss = args.sub_loss,
+    #     sub_frac = args.sub_frac
+    # ).cuda(gpu)
     model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
     # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu], find_unused_parameters=True)
@@ -297,7 +320,7 @@ def main():
     
 
     if args.pretrain:
-        pretrain_path = os.path.join(args.pretrain_folder, 'pcnet_epoch%s.pth.tar' % args.start_epoch)
+        pretrain_path = os.path.join(args.pretrain_folder, 'byol_epoch%s.pth.tar' % args.start_epoch)
         ckpt = torch.load(pretrain_path, map_location="cpu")
         model.load_state_dict(ckpt["model"])
         optimizer.load_state_dict(ckpt["optimizer"])
@@ -378,7 +401,7 @@ def main():
                     optimizer=optimizer.state_dict(),
                 )
                 checkpoint_path = os.path.join(
-                    ckpt_folder, 'pcnet_epoch%s.pth.tar' % str(i+1))
+                    ckpt_folder, 'byol_epoch%s.pth.tar' % str(i+1))
                 torch.save(state, checkpoint_path)
 
     if args.rank == 0:
@@ -405,7 +428,7 @@ def main():
                 optimizer=optimizer.state_dict(),
             )
         checkpoint_path = os.path.join(
-            ckpt_folder, 'pcnet_epoch%s.pth.tar' % str(args.epochs))
+            ckpt_folder, 'byol_epoch%s.pth.tar' % str(args.epochs))
         torch.save(state, checkpoint_path)
 
 

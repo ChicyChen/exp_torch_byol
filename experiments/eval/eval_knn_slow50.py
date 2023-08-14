@@ -43,7 +43,7 @@ parser.add_argument('--epoch_num', default=50, type=int)
 
 parser.add_argument('--num_seq', default=1, type=int)
 parser.add_argument('--seq_len', default=8, type=int)
-parser.add_argument('--downsample', default=4, type=int)
+parser.add_argument('--downsample', default=8, type=int)
 parser.add_argument('--num_aug', default=1, type=int)
 
 parser.add_argument('--ode', action='store_true')

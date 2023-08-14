@@ -43,10 +43,13 @@ parser.add_argument('--epoch_num', default=100, type=int)
 
 parser.add_argument('--num_seq', default=1, type=int)
 parser.add_argument('--seq_len', default=8, type=int)
-parser.add_argument('--downsample', default=4, type=int)
+parser.add_argument('--downsample', default=8, type=int)
 parser.add_argument('--num_aug', default=1, type=int)
 
 parser.add_argument('--ode', action='store_true')
+
+parser.add_argument('--img_size', default=112, type=int)
+parser.add_argument('--r21d', action='store_true')
 
 
 # def default_transform():
@@ -65,8 +68,8 @@ parser.add_argument('--ode', action='store_true')
 
 def test_transform():
     transform = transforms.Compose([
-        RandomCrop(size=128, consistent=True),
-        Scale(size=(128,128)),
+        RandomCrop(size=args.img_size, consistent=True),
+        Scale(size=(args.img_size,args.img_size)),
         ToTensor(),
         Normalize()
     ])
@@ -109,14 +112,28 @@ def main():
     global cuda
     cuda = torch.device('cuda')
 
-    if not args.kinetics:
-        resnet = models.video.r3d_18()
-        # modify model
-        # resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+
+    if args.r21d:
+        model_name = 'r21d18'
+        if not args.kinetics:
+            resnet = models.video.r2plus1d_18()
+        else:
+            resnet = models.video.r2plus1d_18(pretrained=True)
     else:
-        resnet = models.video.r3d_18(pretrained=True)
-        # modify model
-        # resnet.layer4[1].conv2[0] = torch.nn.Conv3d(512, 512, kernel_size=(3, 3, 3), stride=(1, 1, 1), padding=(1, 1, 1), bias=False)
+        model_name = 'r3d18'
+        if not args.kinetics:
+            resnet = models.video.r3d_18()
+        else:
+            resnet = models.video.r3d_18(pretrained=True)
+
+    # if not args.kinetics:
+    #     resnet = models.video.r3d_18()
+    #     # modify model
+    #     # resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+    # else:
+    #     resnet = models.video.r3d_18(pretrained=True)
+    #     # modify model
+    #     # resnet.layer4[1].conv2[0] = torch.nn.Conv3d(512, 512, kernel_size=(3, 3, 3), stride=(1, 1, 1), padding=(1, 1, 1), bias=False)
     
     # resnet.maxpool = torch.nn.Identity()
 
@@ -124,7 +141,7 @@ def main():
         model = BYOL(
             resnet,
             clip_size = 8,
-            image_size = 128,
+            image_size = args.img_size,
             hidden_layer = 'avgpool',
             projection_size = 256,
             projection_hidden_size = 4096,
@@ -133,7 +150,7 @@ def main():
         model = BYOL_ODE(
         resnet,
         clip_size = 8,
-        image_size = 128,
+        image_size = args.img_size,
         hidden_layer = 'avgpool',
         projection_size = 256,
         projection_hidden_size = 4096,
@@ -142,6 +159,11 @@ def main():
     model = nn.DataParallel(model)
     model = model.to(cuda)
     model.eval()
+
+    if args.img_size == 224:
+        dim = 240
+    else:
+        dim = 150
 
     if not args.hmdb and not args.mnist:
         logging.info(f"k-nn accuracy performed on ucf \n")
@@ -154,7 +176,9 @@ def main():
                                     seq_len=args.seq_len, 
                                     num_seq=args.num_seq, 
                                     downsample=args.downsample,
-                                    num_aug=args.num_aug)
+                                    num_aug=args.num_aug,
+                                    dim=dim,
+                                    )
         test_loader = get_data_ucf(batch_size=args.batch_size, 
                                     mode='val', 
                                     # transform=default_transform(), 
@@ -164,21 +188,27 @@ def main():
                                     seq_len=args.seq_len, 
                                     num_seq=args.num_seq, 
                                     downsample=args.downsample,
-                                    num_aug=args.num_aug)
+                                    num_aug=args.num_aug,
+                                    dim=dim,
+                                    )
     elif args.hmdb:
         logging.info(f"k-nn accuracy performed on hmdb \n")
         train_loader = get_data_hmdb(batch_size=args.batch_size, 
                                     mode='train', 
-                                    transform=default_transform(), 
-                                    transform2=default_transform(),
+                                    transform=test_transform(),
+                                    transform2=test_transform(),
+                                    # transform=default_transform(), 
+                                    # transform2=default_transform(),
                                     seq_len=args.seq_len, 
                                     num_seq=args.num_seq, 
                                     downsample=args.downsample,
                                     num_aug=args.num_aug)
         test_loader = get_data_hmdb(batch_size=args.batch_size, 
                                     mode='val', 
-                                    transform=default_transform(), 
-                                    transform2=default_transform(),
+                                    transform=test_transform(),
+                                    transform2=test_transform(),
+                                    # transform=default_transform(), 
+                                    # transform2=default_transform(),
                                     seq_len=args.seq_len, 
                                     num_seq=args.num_seq, 
                                     downsample=args.downsample,
@@ -187,16 +217,20 @@ def main():
         logging.info(f"k-nn accuracy performed on mnist \n")
         train_loader = get_data_mnist(batch_size=args.batch_size, 
                                     mode='train', 
-                                    transform=default_transform(), 
-                                    transform2=default_transform(),
+                                    transform=test_transform(),
+                                    transform2=test_transform(),
+                                    # transform=default_transform(), 
+                                    # transform2=default_transform(),
                                     seq_len=args.seq_len, 
                                     num_seq=args.num_seq, 
                                     downsample=args.downsample,
                                     num_aug=args.num_aug)
         test_loader = get_data_mnist(batch_size=args.batch_size, 
                                     mode='val', 
-                                    transform=default_transform(), 
-                                    transform2=default_transform(),
+                                    transform=test_transform(),
+                                    transform2=test_transform(),
+                                    # transform=default_transform(), 
+                                    # transform2=default_transform(),
                                     seq_len=args.seq_len, 
                                     num_seq=args.num_seq, 
                                     downsample=args.downsample,
