@@ -37,7 +37,7 @@ parser.add_argument('--start-epoch', default=0, type=int,
 parser.add_argument('--pretrain_path', default='', type=str)
 parser.add_argument('--pretrain', action='store_true')
 
-parser.add_argument('--gpu', default='0,1,2,3', type=str)
+parser.add_argument('--gpu', default='0,1', type=str)
 parser.add_argument('--batch_size', default=16, type=int)
 
 parser.add_argument('--ckpt_folder', default='/home/siyich/byol-pytorch/checkpoints_bad/3dseq_ucf101_lr0.0001_wd1e-05', type=str)
@@ -144,7 +144,7 @@ def main():
             tune_folder = os.path.join(ckpt_folder, 'hmdb_tune_epoch0') 
         else:
             tune_folder = os.path.join(ckpt_folder, 'hmdb_tune_epoch%s' % args.epoch_num)
-    tune_folder = tune_folder+'_lr%s_wd%s_dr%s' % (args.lr, args.wd, args.dropout)
+    tune_folder = tune_folder+'_lr%s_wd%s_dr%s_bs%s' % (args.lr, args.wd, args.dropout, args.batch_size)
     if not os.path.exists(tune_folder):
         os.makedirs(tune_folder)
     
@@ -156,6 +156,7 @@ def main():
     cuda = torch.device('cuda')
 
     resnet = models.video.r3d_18()
+    # resnet = models.video.r2plus1d_18()
     # modify model
     # resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
     # resnet.maxpool = torch.nn.Identity()
@@ -196,6 +197,7 @@ def main():
         if 'linear_pred' in name:
             params.append({'params': param})
         else:
+            # params.append({'params': param})
             params.append({'params': param, 'lr': args.lr/10})
     # print(len(params))
     print('\n===========Check Grad============')
@@ -216,7 +218,8 @@ def main():
                                     seq_len=args.seq_len, 
                                     num_seq=args.num_seq, 
                                     downsample=args.downsample,
-                                    num_aug=args.num_aug)
+                                    num_aug=args.num_aug,
+                                    frame_root="/data")
         test_loader = get_data_ucf(batch_size=args.batch_size, 
                                     mode='val', 
                                     transform=default_transform(), 
@@ -224,7 +227,8 @@ def main():
                                     seq_len=args.seq_len, 
                                     num_seq=args.num_seq, 
                                     downsample=args.downsample,
-                                    num_aug=args.num_aug)
+                                    num_aug=args.num_aug,
+                                    frame_root="/data")
     else:
         logging.info(f"finetuning performed on hmdb")
         train_loader = get_data_hmdb(batch_size=args.batch_size, 

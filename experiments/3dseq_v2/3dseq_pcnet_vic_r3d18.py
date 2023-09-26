@@ -18,7 +18,7 @@ from torchvision import models
 from torchvision import transforms as T
 import torch.nn.functional as F
 
-from dataloader_v2 import get_data_ucf
+from dataloader_v2 import get_data_ucf, get_data_k400, get_data_mk200, get_data_mk400, get_data_minik
 from torch.utils.data import DataLoader
 
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -31,8 +31,9 @@ import matplotlib.pyplot as plt
 from augmentation import *
 from distributed_utils import init_distributed_mode
 
-# python -m torch.distributed.launch --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py
-# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py
+# python -m torch.distributed.launch --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss
+# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss
+# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --epochs 100 --batch_size 256 --sym_loss --base_lr 2.4 --projection 8192 --proj_hidden 8192 --pred_layer 0 --proj_layer 3 --cov_l 0.6 --std_l 1.0 --spa_l 0.0
 
 parser = argparse.ArgumentParser()
 
@@ -57,7 +58,7 @@ parser.add_argument('--wd', default=1e-6, type=float, help='weight decay')
 parser.add_argument('--random', action='store_true')
 parser.add_argument('--num_seq', default=2, type=int)
 parser.add_argument('--seq_len', default=8, type=int)
-parser.add_argument('--downsample', default=8, type=int)
+parser.add_argument('--downsample', default=3, type=int)
 parser.add_argument('--inter_len', default=0, type=int)    # does not need to be positive
 
 parser.add_argument('--sym_loss', action='store_true')
@@ -66,14 +67,15 @@ parser.add_argument('--closed_loop', action='store_true')
 # parser.add_argument('--feature_size', default=512, type=int)
 parser.add_argument('--projection', default=2048, type=int)
 parser.add_argument('--proj_hidden', default=2048, type=int)
-parser.add_argument('--pred_hidden', default=512, type=int)
-parser.add_argument('--pred_layer', default=0, type=int)
+parser.add_argument('--pred_hidden', default=16, type=int)
+parser.add_argument('--pred_layer', default=2, type=int)
 parser.add_argument('--proj_layer', default=3, type=int)
 
 parser.add_argument('--mse_l', default=1.0, type=float)
 parser.add_argument('--loop_l', default=0.0, type=float)
 parser.add_argument('--std_l', default=1.0, type=float)
 parser.add_argument('--cov_l', default=0.04, type=float)
+parser.add_argument('--spa_l', default=0.0, type=float)
 
 parser.add_argument('--bn_last', action='store_true')
 parser.add_argument('--pred_bn_last', action='store_true')
@@ -83,12 +85,12 @@ parser.add_argument('--predictor', default=1, type=int)
 
 parser.add_argument('--infonce', action='store_true')
 parser.add_argument('--sub_loss', action='store_true')
-parser.add_argument('--sub_frac', default=0.2, type=float)
+parser.add_argument('--sub_frac', default=0.25, type=float)
 
 parser.add_argument('--base_lr', default=4.8, type=float)
 
 # Running
-parser.add_argument("--num-workers", type=int, default=10)
+parser.add_argument("--num-workers", type=int, default=32)
 parser.add_argument('--device', default='cuda',
                     help='device to use for training / testing')
 
@@ -101,10 +103,19 @@ parser.add_argument('--dist-url', default='env://',
 
 parser.add_argument('--r21d', action='store_true')
 
+parser.add_argument('--mk200', action='store_true')
+parser.add_argument('--mk400', action='store_true')
+parser.add_argument('--minik', action='store_true')
+parser.add_argument('--k400', action='store_true')
+parser.add_argument('--fraction', default=1.0, type=float)
+
+parser.add_argument('--reg_all', action='store_true')
+
 
 def adjust_learning_rate(args, optimizer, loader, step):
     max_steps = args.epochs * len(loader)
-    warmup_steps = 10 * len(loader)
+    # warmup_steps = 10 * len(loader)
+    warmup_steps = 0
     base_lr = args.base_lr * args.batch_size / 256
     if step < warmup_steps:
         lr = base_lr * step / warmup_steps
@@ -247,8 +258,19 @@ def main():
         model_name = 'r3d18'
         resnet = models.video.r3d_18()
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_%s_%s_112/hid%s_hidpre%s_prj%s_prl%s_pre%s_np%s_pl%s_il%s_ns%s/mse%s_std%s_cov%s_sym%s_closed%s/bs%s_lr%s_wd%s_ds%s' \
-        % (ind_name, model_name, args.proj_hidden, args.pred_hidden, args.projection, args.proj_layer, args.predictor, args.num_predictor, args.pred_layer, args.inter_len, args.num_seq, args.mse_l, args.std_l, args.cov_l, args.sym_loss, args.closed_loop, args.batch_size, args.base_lr, args.wd, args.downsample)
+    if args.k400:
+        dataname = 'k400'
+    elif args.mk200:
+        dataname = 'mk200'
+    elif args.mk400:
+        dataname = 'mk400'
+    elif args.minik:
+        dataname = 'minik'
+    else:
+        dataname = 'ucf'
+
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_gather_%s_f%s_%s_%s_112/prj%s_hidproj%s_hidpre%s_prl%s_pre%s_np%s_pl%s_il%s_ns%s/mse%s_loop%s_std%s_cov%s_spa%s_rall%s_sym%s_closed%s_sub%s_sf%s/bs%s_lr%s_wd%s_ds%s_nw' \
+        % (dataname, args.fraction, ind_name, model_name, args.projection, args.proj_hidden, args.pred_hidden, args.proj_layer, args.predictor, args.num_predictor, args.pred_layer, args.inter_len, args.num_seq, args.mse_l, args.loop_l, args.std_l, args.cov_l, args.spa_l, args.reg_all, args.sym_loss, args.closed_loop, args.sub_loss, args.sub_frac, args.batch_size, args.base_lr, args.wd, args.downsample)
 
     if args.rank == 0:
         if not os.path.exists(ckpt_folder):
@@ -274,18 +296,25 @@ def main():
         loop_l = args.loop_l,
         std_l = args.std_l,
         cov_l = args.cov_l,
+        spa_l = args.spa_l,
         bn_last = args.bn_last,
         pred_bn_last = args.pred_bn_last,
         predictor = args.predictor,
         num_predictor = args.num_predictor,
         infonce = args.infonce,
         sub_loss = args.sub_loss,
-        sub_frac = args.sub_frac
+        sub_frac = args.sub_frac,
+        reg_all = args.reg_all
     ).cuda(gpu)
-    model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
+    # sync bn does not works for ode
+    if args.predictor == 3:
+        model.encoder = nn.SyncBatchNorm.convert_sync_batchnorm(model.encoder)
+    else:
+        model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
     # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu], find_unused_parameters=True)
 
+    # optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.wd)
     # optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
     optimizer = LARS(
         model.parameters(),
@@ -307,7 +336,18 @@ def main():
     per_device_batch_size = args.batch_size // args.world_size
     # print(per_device_batch_size)
 
-    train_loader = get_data_ucf(batch_size=per_device_batch_size, 
+    if args.k400:
+        loader_method = get_data_k400
+    elif args.mk200:
+        loader_method = get_data_mk200
+    elif args.mk400:
+        loader_method = get_data_mk400
+    elif args.minik:
+        loader_method = get_data_minik
+    else:
+        loader_method = get_data_ucf
+
+    train_loader = loader_method(batch_size=per_device_batch_size, 
                                 mode='train', 
                                 # transform_consistent = transform_consistent(),
                                 # transform_inconsistent = transform_inconsistent(),
@@ -323,6 +363,7 @@ def main():
                                 ddp=True,
                                 dim=150,
                                 # dim=240,
+                                fraction=args.fraction
                                 )
     # test_loader = get_data_ucf(batch_size=per_device_batch_size, 
     #                             mode='val',
@@ -340,6 +381,7 @@ def main():
     #                             ddp=True,
     #                             # dim=150,
     #                             dim = 240,
+    #                             fraction = args.fraction
     #                             )
     
     train_loss_list = []

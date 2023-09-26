@@ -134,7 +134,7 @@ def main():
     else:
         ind_name = 'vic'
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_%s_debug_sub%s/hid%s_hidpre%s_prj%s_prl%s_pre%s_np%s_pl%s_il%s_ns%s/mse%s_std%s_cov%s_sym%s_closed%s/bs%s_lr%s_wd%s' \
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_adam_%s_debug_sub%s/hid%s_hidpre%s_prj%s_prl%s_pre%s_np%s_pl%s_il%s_ns%s/mse%s_std%s_cov%s_sym%s_closed%s/bs%s_lr%s_wd%s' \
         % (ind_name, args.sub_loss, args.proj_hidden, args.pred_hidden, args.projection, args.proj_layer, args.predictor, args.num_predictor, args.pred_layer, args.inter_len, args.num_seq, args.mse_l, args.std_l, args.cov_l, args.sym_loss, args.closed_loop, args.batch_size, args.lr, args.wd)
 
     if not os.path.exists(ckpt_folder):

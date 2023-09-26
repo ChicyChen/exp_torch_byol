@@ -11,6 +11,7 @@ from torchvision import transforms as T
 from torchdiffeq import odeint_adjoint
 from torchdiffeq import odeint
 
+import numpy as np
 
 # helper functions
 
@@ -105,15 +106,21 @@ class EMA():
         super().__init__()
         self.beta = beta
 
-    def update_average(self, old, new):
+    def update_average(self, old, new, step=None, total_steps=None):
         if old is None:
             return new
-        return old * self.beta + (1 - self.beta) * new
+        if step is not None and total_steps is not None:
+            decay = 1 - (1 - self.beta) * (np.cos(np.pi * step / total_steps) + 1) / 2.0
+        else:
+            decay = self.beta 
+        return old * decay + (1 - decay) * new
+    
 
-def update_moving_average(ema_updater, ma_model, current_model):
+def update_moving_average(ema_updater, ma_model, current_model, step=None, total_steps=None):
     for current_params, ma_params in zip(current_model.parameters(), ma_model.parameters()):
         old_weight, up_weight = ma_params.data, current_params.data
         ma_params.data = ema_updater.update_average(old_weight, up_weight)
+
 
 # helper models
 

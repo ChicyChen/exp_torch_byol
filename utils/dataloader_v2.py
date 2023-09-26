@@ -28,6 +28,231 @@ def pil_loader(path):
             return img.convert('RGB')
 
 
+
+def get_data_minik(transform_consistent=None,
+                transform_inconsistent=None,
+                mode='train', 
+                seq_len=4, 
+                num_seq=3, 
+                downsample=8, 
+                return_label=True, 
+                batch_size=16, 
+                dim=150,
+                csv_root='/home/siyich/Datasets/Videos/Kinetics400',
+                frame_root='/home/siyich/Datasets/Videos',
+                ddp=False,
+                random=False,
+                inter_len=0, # num of frames (after downsampling) between two clips
+                fraction=1.0
+                ):
+    print('Loading data for "%s" ...' % mode)
+    dataset = MiniK(mode=mode,
+                        transform_consistent=transform_consistent,
+                        transform_inconsistent=transform_inconsistent,
+                        seq_len=seq_len,
+                        num_seq=num_seq,
+                        downsample=downsample,
+                        return_label=return_label,
+                        dim=dim,
+                        csv_root=csv_root,
+                        frame_root=frame_root,
+                        random=random,
+                        inter_len=inter_len,
+                        fraction=fraction
+                        )
+    if not ddp:
+        sampler = data.RandomSampler(dataset)
+    else:
+        sampler = data.distributed.DistributedSampler(dataset, shuffle=True)
+
+    if mode == 'train':
+        data_loader = data.DataLoader(dataset,
+                                      batch_size=batch_size,
+                                      sampler=sampler,
+                                      shuffle=False,
+                                      num_workers=128,
+                                      pin_memory=True,
+                                      drop_last=True)
+    else:
+        data_loader = data.DataLoader(dataset,
+                                      batch_size=batch_size,
+                                      sampler=sampler,
+                                      shuffle=False,
+                                      num_workers=128,
+                                      pin_memory=True,
+                                      drop_last=True)
+    print('"%s" dataset size: %d' % (mode, len(dataset)))
+    return data_loader
+        
+
+def get_data_mk400(transform_consistent=None,
+                transform_inconsistent=None,
+                mode='train', 
+                seq_len=4, 
+                num_seq=3, 
+                downsample=8, 
+                return_label=True, 
+                batch_size=16, 
+                dim=150,
+                csv_root='/home/siyich/Datasets/Videos/Kinetics400',
+                frame_root='/home/siyich/Datasets/Videos',
+                ddp=False,
+                random=False,
+                inter_len=0, # num of frames (after downsampling) between two clips
+                fraction=1.0
+                ):
+    print('Loading data for "%s" ...' % mode)
+    dataset = MiniK400(mode=mode,
+                        transform_consistent=transform_consistent,
+                        transform_inconsistent=transform_inconsistent,
+                        seq_len=seq_len,
+                        num_seq=num_seq,
+                        downsample=downsample,
+                        return_label=return_label,
+                        dim=dim,
+                        csv_root=csv_root,
+                        frame_root=frame_root,
+                        random=random,
+                        inter_len=inter_len,
+                        fraction=fraction
+                        )
+    if not ddp:
+        sampler = data.RandomSampler(dataset)
+    else:
+        sampler = data.distributed.DistributedSampler(dataset, shuffle=True)
+
+    if mode == 'train':
+        data_loader = data.DataLoader(dataset,
+                                      batch_size=batch_size,
+                                      sampler=sampler,
+                                      shuffle=False,
+                                      num_workers=128,
+                                      pin_memory=True,
+                                      drop_last=True)
+    else:
+        data_loader = data.DataLoader(dataset,
+                                      batch_size=batch_size,
+                                      sampler=sampler,
+                                      shuffle=False,
+                                      num_workers=128,
+                                      pin_memory=True,
+                                      drop_last=True)
+    print('"%s" dataset size: %d' % (mode, len(dataset)))
+    return data_loader
+        
+
+def get_data_mk200(transform_consistent=None,
+                transform_inconsistent=None,
+                mode='train', 
+                seq_len=4, 
+                num_seq=3, 
+                downsample=8, 
+                return_label=True, 
+                batch_size=16, 
+                dim=150,
+                csv_root='/home/siyich/Datasets/Videos/Kinetics400',
+                frame_root='/home/siyich/Datasets/Videos',
+                ddp=False,
+                random=False,
+                inter_len=0, # num of frames (after downsampling) between two clips
+                fraction=1.0
+                ):
+    print('Loading data for "%s" ...' % mode)
+    dataset = MiniK200(mode=mode,
+                        transform_consistent=transform_consistent,
+                        transform_inconsistent=transform_inconsistent,
+                        seq_len=seq_len,
+                        num_seq=num_seq,
+                        downsample=downsample,
+                        return_label=return_label,
+                        dim=dim,
+                        csv_root=csv_root,
+                        frame_root=frame_root,
+                        random=random,
+                        inter_len=inter_len,
+                        fraction=fraction
+                        )
+    if not ddp:
+        sampler = data.RandomSampler(dataset)
+    else:
+        sampler = data.distributed.DistributedSampler(dataset, shuffle=True)
+
+    if mode == 'train':
+        data_loader = data.DataLoader(dataset,
+                                      batch_size=batch_size,
+                                      sampler=sampler,
+                                      shuffle=False,
+                                      num_workers=128,
+                                      pin_memory=True,
+                                      drop_last=True)
+    else:
+        data_loader = data.DataLoader(dataset,
+                                      batch_size=batch_size,
+                                      sampler=sampler,
+                                      shuffle=False,
+                                      num_workers=128,
+                                      pin_memory=True,
+                                      drop_last=True)
+    print('"%s" dataset size: %d' % (mode, len(dataset)))
+    return data_loader
+        
+
+def get_data_k400(transform_consistent=None,
+                transform_inconsistent=None,
+                mode='train', 
+                seq_len=4, 
+                num_seq=3, 
+                downsample=8, 
+                return_label=True, 
+                batch_size=16, 
+                dim=150,
+                csv_root='/home/siyich/Datasets/Videos/Kinetics400',
+                frame_root='/home/siyich/Datasets/Videos',
+                ddp=False,
+                random=False,
+                inter_len=0, # num of frames (after downsampling) between two clips
+                fraction=1.0
+                ):
+    print('Loading data for "%s" ...' % mode)
+    dataset = Kinetics400(mode=mode,
+                        transform_consistent=transform_consistent,
+                        transform_inconsistent=transform_inconsistent,
+                        seq_len=seq_len,
+                        num_seq=num_seq,
+                        downsample=downsample,
+                        return_label=return_label,
+                        dim=dim,
+                        csv_root=csv_root,
+                        frame_root=frame_root,
+                        random=random,
+                        inter_len=inter_len,
+                        fraction=fraction
+                        )
+    if not ddp:
+        sampler = data.RandomSampler(dataset)
+    else:
+        sampler = data.distributed.DistributedSampler(dataset, shuffle=True)
+
+    if mode == 'train':
+        data_loader = data.DataLoader(dataset,
+                                      batch_size=batch_size,
+                                      sampler=sampler,
+                                      shuffle=False,
+                                      num_workers=128,
+                                      pin_memory=True,
+                                      drop_last=True)
+    else:
+        data_loader = data.DataLoader(dataset,
+                                      batch_size=batch_size,
+                                      sampler=sampler,
+                                      shuffle=False,
+                                      num_workers=128,
+                                      pin_memory=True,
+                                      drop_last=True)
+    print('"%s" dataset size: %d' % (mode, len(dataset)))
+    return data_loader
+
+
 def get_data_ucf(transform_consistent=None,
                 transform_inconsistent=None,
                 mode='train', 
@@ -42,7 +267,8 @@ def get_data_ucf(transform_consistent=None,
                 frame_root='/home/siyich/Datasets/Videos',
                 ddp=False,
                 random=False,
-                inter_len=0 # num of frames (after downsampling) between two clips
+                inter_len=0, # num of frames (after downsampling) between two clips
+                fraction=1.0
                 ):
     print('Loading data for "%s" ...' % mode)
     dataset = UCF101(mode=mode,
@@ -69,7 +295,7 @@ def get_data_ucf(transform_consistent=None,
                                       batch_size=batch_size,
                                       sampler=sampler,
                                       shuffle=False,
-                                      num_workers=4,
+                                      num_workers=128,
                                       pin_memory=True,
                                       drop_last=True)
     else:
@@ -77,7 +303,7 @@ def get_data_ucf(transform_consistent=None,
                                       batch_size=batch_size,
                                       sampler=sampler,
                                       shuffle=False,
-                                      num_workers=4,
+                                      num_workers=128,
                                       pin_memory=True,
                                       drop_last=True)
     print('"%s" dataset size: %d' % (mode, len(dataset)))
@@ -143,8 +369,12 @@ class UCF101(data.Dataset):
         drop_idx = []
         for idx, row in video_info.iterrows():
             _, vlen, _ = row
-            if vlen-self.total_len <= 0:
+
+            if vlen-self.total_len <= 0 and not self.random:
                 drop_idx.append(idx)
+            if vlen-self.seq_len*self.downsample <= 0 and self.random:
+                drop_idx.append(idx)
+
         self.video_info = video_info.drop(drop_idx, axis=0)
         print("Droped number of videos:", len(drop_idx))
 
@@ -154,7 +384,7 @@ class UCF101(data.Dataset):
     def idx_sampler(self, vlen, vpath):
         '''sample index from a video'''
         
-        if vlen-self.total_len <= 0: raise ValueError('video too short')
+        # if vlen-self.total_len <= 0: raise ValueError('video too short')
         if not self.random:
             n = 1
             start_idx = np.random.choice(range(vlen-self.total_len), n)
@@ -162,8 +392,11 @@ class UCF101(data.Dataset):
 
             # seq_idx = np.arange(self.seq_len*self.num_seq)*self.downsample + start_idx
         else:
-            n = self.seq_len*self.num_seq
-            seq_idx = np.random.choice(range(vlen-self.total_len), n)
+            # each clip is selected randomly without ordering
+            n = self.num_seq
+            begin_idxs = np.random.choice(range(vlen-self.seq_len*self.downsample), n) 
+            inter_idxs = (np.arange(self.seq_len)*self.downsample).reshape(-1,1)
+            seq_idx = (inter_idxs + begin_idxs).T.flatten()
 
 
         return [seq_idx, vpath]
@@ -201,8 +434,549 @@ class UCF101(data.Dataset):
 
     def __len__(self):
         return len(self.video_info)
+    
 
 
+# TODO
+class Kinetics400(data.Dataset):
+    def __init__(self,
+                mode='train',
+                transform_consistent=None,
+                transform_inconsistent=None,
+                seq_len:int=4,
+                num_seq:int=3,
+                downsample:int=8,
+                return_label=False,
+                dim=150,
+                csv_root='/home/siyich/Datasets/Videos/Kinetics400',
+                frame_root='/home/siyich/Datasets/Videos',
+                random=False,
+                inter_len:int=0, # num of frames (after downsampling) between two clips
+                fraction=1.0
+                ):
+        self.mode = mode
+        self.transform_consistent = transform_consistent
+        self.transform_inconsistent = transform_inconsistent
+        self.seq_len=seq_len
+        self.num_seq = num_seq
+        self.downsample = downsample
+        self.return_label = return_label
+        self.dim = dim
+        self.csv_root = csv_root
+        self.frame_root = frame_root
+        self.random = random
+        self.inter_len = inter_len
+        self.total_len = ((self.seq_len + self.inter_len)*self.num_seq - self.inter_len)*self.downsample
+        self.fraction = fraction
+        
+        begin_idxs = np.arange(self.num_seq)*self.downsample*(self.seq_len+self.inter_len) 
+        inter_idxs = (np.arange(self.seq_len)*self.downsample).reshape(-1,1)
+        self.base_seq_idx = (inter_idxs + begin_idxs).T.flatten()
+
+        if dim == 150:
+            folder_name = 'k400_150'
+        else:
+            folder_name = 'k400_240'
+
+        # splits
+        if mode == 'train':
+            split = os.path.join(self.csv_root, folder_name, 'train.csv')
+            video_info = pd.read_csv(split, header=None)
+        elif mode == 'val': 
+            split = os.path.join(self.csv_root, folder_name, 'validate.csv')
+            video_info = pd.read_csv(split, header=None)
+        elif mode == 'test': 
+            split = os.path.join(self.csv_root, folder_name, 'test.csv')
+            video_info = pd.read_csv(split, header=None)
+        else: raise ValueError('wrong mode')
+
+        # filter out too short videos:
+        drop_idx = []
+        for idx, row in video_info.iterrows():
+            _, vlen, _ = row
+            # if vlen-self.total_len <= 0:
+            #     drop_idx.append(idx)
+
+            if vlen-self.total_len <= 0 and not self.random:
+                drop_idx.append(idx)
+            if vlen-self.seq_len*self.downsample <= 0:
+                drop_idx.append(idx)
+        self.video_info = video_info.drop(drop_idx, axis=0)
+        print("Droped number of videos:", len(drop_idx))
+
+        if self.fraction < 1: 
+            self.video_info = self.video_info.sample(frac=self.fraction)
+        # shuffle not required due to external sampler
+
+    def idx_sampler(self, vlen):
+        '''sample index from a video'''
+        
+        # if vlen-self.total_len <= 0: raise ValueError('video too short')
+        if not self.random:
+            n = 1
+            start_idx = np.random.choice(range(vlen-self.total_len), n)
+            seq_idx = self.base_seq_idx + start_idx
+
+            # seq_idx = np.arange(self.seq_len*self.num_seq)*self.downsample + start_idx
+        else:
+            # n = self.seq_len*self.num_seq
+            # seq_idx = np.random.choice(range(vlen-self.total_len), n)
+            n = self.num_seq
+            begin_idxs = np.random.choice(range(vlen-self.seq_len*self.downsample), n) 
+            inter_idxs = (np.arange(self.seq_len)*self.downsample).reshape(-1,1)
+            seq_idx = (inter_idxs + begin_idxs).T.flatten()
+
+
+        return seq_idx
+
+
+    def __getitem__(self, index):
+        vpath, vlen, aid = self.video_info.iloc[index]
+
+        assert vlen > 0
+
+        # if (vpath == 'Kinetics400/frame_150/train/lswHseMTGL0_000097_000107'):
+        #     print(vpath, vlen, aid)
+
+        idx_block = self.idx_sampler(vlen)
+        
+        seq = []
+        for i in idx_block:
+            img_name = "image_%05d.jpg" % (i+1)
+            imgs = pil_loader(os.path.join(self.frame_root, str(vpath), img_name))
+            seq.append(imgs)
+
+
+        if self.transform_consistent is not None: 
+                seq = self.transform_consistent(seq) # apply same transform
+
+        if self.transform_inconsistent is not None: 
+            for i in range(self.num_seq):
+                sub_seq = self.transform_inconsistent(seq[i*self.seq_len:(i+1)*self.seq_len])
+                seq[i*self.seq_len:(i+1)*self.seq_len] = sub_seq
+                
+
+        (C, H, W) = seq[0].size()
+        seq = torch.stack(seq, 0)
+        seq = seq.view(self.num_seq, self.seq_len, C, H, W) # N, T, C, H, W
+        seq = seq.permute(0,2,1,3,4) # N, C, T, H, W
+        # seq = seq.view(self.num_seq*self.seq_len, C, H, W) # N*T, C, H, W
+        # seq = seq.permute(1,0,2,3) # C, N*T, H, W
+        
+        if self.return_label:
+            label = torch.LongTensor([aid])
+            return seq, label
+        
+        return seq
+
+    def __len__(self):
+        return len(self.video_info)
+    
+
+# TODO
+class MiniK200(data.Dataset):
+    def __init__(self,
+                mode='train',
+                transform_consistent=None,
+                transform_inconsistent=None,
+                seq_len:int=4,
+                num_seq:int=3,
+                downsample:int=8,
+                return_label=False,
+                dim=150,
+                csv_root='/home/siyich/Datasets/Videos/Kinetics400',
+                frame_root='/home/siyich/Datasets/Videos',
+                random=False,
+                inter_len:int=0, # num of frames (after downsampling) between two clips
+                fraction=1.0
+                ):
+        self.mode = mode
+        self.transform_consistent = transform_consistent
+        self.transform_inconsistent = transform_inconsistent
+        self.seq_len=seq_len
+        self.num_seq = num_seq
+        self.downsample = downsample
+        self.return_label = return_label
+        self.dim = dim
+        self.csv_root = csv_root
+        self.frame_root = frame_root
+        self.random = random
+        self.inter_len = inter_len
+        self.total_len = ((self.seq_len + self.inter_len)*self.num_seq - self.inter_len)*self.downsample
+        self.fraction = fraction
+        
+        begin_idxs = np.arange(self.num_seq)*self.downsample*(self.seq_len+self.inter_len) 
+        inter_idxs = (np.arange(self.seq_len)*self.downsample).reshape(-1,1)
+        self.base_seq_idx = (inter_idxs + begin_idxs).T.flatten()
+
+        if dim == 150:
+            folder_name = 'minik200_150'
+        else:
+            folder_name = 'minik200_240'
+
+        # splits
+        if mode == 'train':
+            split = os.path.join(self.csv_root, folder_name, 'train.csv')
+            video_info = pd.read_csv(split, header=None)
+        elif mode == 'val': 
+            split = os.path.join(self.csv_root, folder_name, 'validate.csv')
+            video_info = pd.read_csv(split, header=None)
+        elif mode == 'test': 
+            split = os.path.join(self.csv_root, folder_name, 'test.csv')
+            video_info = pd.read_csv(split, header=None)
+        else: raise ValueError('wrong mode')
+
+        # filter out too short videos:
+        drop_idx = []
+        for idx, row in video_info.iterrows():
+            _, vlen, _ = row
+            # if vlen-self.total_len <= 0:
+            #     drop_idx.append(idx)
+
+            if vlen-self.total_len <= 0 and not self.random:
+                drop_idx.append(idx)
+            if vlen-self.seq_len*self.downsample <= 0:
+                drop_idx.append(idx)
+        self.video_info = video_info.drop(drop_idx, axis=0)
+        print("Droped number of videos:", len(drop_idx))
+
+        # if self.fraction < 1: 
+        #     self.video_info = self.video_info.sample(frac=self.fraction)
+        # shuffle not required due to external sampler
+
+    def idx_sampler(self, vlen):
+        '''sample index from a video'''
+        
+        # if vlen-self.total_len <= 0: raise ValueError('video too short')
+        if not self.random:
+            n = 1
+            start_idx = np.random.choice(range(vlen-self.total_len), n)
+            seq_idx = self.base_seq_idx + start_idx
+
+            # seq_idx = np.arange(self.seq_len*self.num_seq)*self.downsample + start_idx
+        else:
+            # n = self.seq_len*self.num_seq
+            # seq_idx = np.random.choice(range(vlen-self.total_len), n)
+            n = self.num_seq
+            begin_idxs = np.random.choice(range(vlen-self.seq_len*self.downsample), n) 
+            inter_idxs = (np.arange(self.seq_len)*self.downsample).reshape(-1,1)
+            seq_idx = (inter_idxs + begin_idxs).T.flatten()
+
+
+        return seq_idx
+
+
+    def __getitem__(self, index):
+        vpath, vlen, aid = self.video_info.iloc[index]
+
+        assert vlen > 0
+
+        # if (vpath == 'Kinetics400/frame_150/train/lswHseMTGL0_000097_000107'):
+        #     print(vpath, vlen, aid)
+
+        idx_block = self.idx_sampler(vlen)
+        
+        seq = []
+        for i in idx_block:
+            img_name = "image_%05d.jpg" % (i+1)
+            imgs = pil_loader(os.path.join(self.frame_root, str(vpath), img_name))
+            seq.append(imgs)
+
+
+        if self.transform_consistent is not None: 
+                seq = self.transform_consistent(seq) # apply same transform
+
+        if self.transform_inconsistent is not None: 
+            for i in range(self.num_seq):
+                sub_seq = self.transform_inconsistent(seq[i*self.seq_len:(i+1)*self.seq_len])
+                seq[i*self.seq_len:(i+1)*self.seq_len] = sub_seq
+                
+
+        (C, H, W) = seq[0].size()
+        seq = torch.stack(seq, 0)
+        seq = seq.view(self.num_seq, self.seq_len, C, H, W) # N, T, C, H, W
+        seq = seq.permute(0,2,1,3,4) # N, C, T, H, W
+        # seq = seq.view(self.num_seq*self.seq_len, C, H, W) # N*T, C, H, W
+        # seq = seq.permute(1,0,2,3) # C, N*T, H, W
+        
+        if self.return_label:
+            label = torch.LongTensor([aid])
+            return seq, label
+        
+        return seq
+
+    def __len__(self):
+        return len(self.video_info)
+    
+
+class MiniK400(data.Dataset):
+    def __init__(self,
+                mode='train',
+                transform_consistent=None,
+                transform_inconsistent=None,
+                seq_len:int=4,
+                num_seq:int=3,
+                downsample:int=8,
+                return_label=False,
+                dim=150,
+                csv_root='/home/siyich/Datasets/Videos/Kinetics400',
+                frame_root='/home/siyich/Datasets/Videos',
+                random=False,
+                inter_len:int=0, # num of frames (after downsampling) between two clips
+                fraction=1.0
+                ):
+        self.mode = mode
+        self.transform_consistent = transform_consistent
+        self.transform_inconsistent = transform_inconsistent
+        self.seq_len=seq_len
+        self.num_seq = num_seq
+        self.downsample = downsample
+        self.return_label = return_label
+        self.dim = dim
+        self.csv_root = csv_root
+        self.frame_root = frame_root
+        self.random = random
+        self.inter_len = inter_len
+        self.total_len = ((self.seq_len + self.inter_len)*self.num_seq - self.inter_len)*self.downsample
+        self.fraction = fraction
+        
+        begin_idxs = np.arange(self.num_seq)*self.downsample*(self.seq_len+self.inter_len) 
+        inter_idxs = (np.arange(self.seq_len)*self.downsample).reshape(-1,1)
+        self.base_seq_idx = (inter_idxs + begin_idxs).T.flatten()
+
+        if dim == 150:
+            folder_name = 'minik400_150'
+        else:
+            folder_name = 'minik400_240'
+
+        # splits
+        if mode == 'train':
+            split = os.path.join(self.csv_root, folder_name, 'train.csv')
+            video_info = pd.read_csv(split, header=None)
+        elif mode == 'val': 
+            split = os.path.join(self.csv_root, folder_name, 'validate.csv')
+            video_info = pd.read_csv(split, header=None)
+        elif mode == 'test': 
+            split = os.path.join(self.csv_root, folder_name, 'test.csv')
+            video_info = pd.read_csv(split, header=None)
+        else: raise ValueError('wrong mode')
+
+        # filter out too short videos:
+        drop_idx = []
+        for idx, row in video_info.iterrows():
+            _, vlen, _ = row
+            # if vlen-self.total_len <= 0:
+            #     drop_idx.append(idx)
+
+            if vlen-self.total_len <= 0 and not self.random:
+                drop_idx.append(idx)
+            if vlen-self.seq_len*self.downsample <= 0:
+                drop_idx.append(idx)
+        self.video_info = video_info.drop(drop_idx, axis=0)
+        print("Droped number of videos:", len(drop_idx))
+
+        # if self.fraction < 1: 
+        #     self.video_info = self.video_info.sample(frac=self.fraction)
+        # shuffle not required due to external sampler
+
+    def idx_sampler(self, vlen):
+        '''sample index from a video'''
+        
+        # if vlen-self.total_len <= 0: raise ValueError('video too short')
+        if not self.random:
+            n = 1
+            start_idx = np.random.choice(range(vlen-self.total_len), n)
+            seq_idx = self.base_seq_idx + start_idx
+
+            # seq_idx = np.arange(self.seq_len*self.num_seq)*self.downsample + start_idx
+        else:
+            # n = self.seq_len*self.num_seq
+            # seq_idx = np.random.choice(range(vlen-self.total_len), n)
+            n = self.num_seq
+            begin_idxs = np.random.choice(range(vlen-self.seq_len*self.downsample), n) 
+            inter_idxs = (np.arange(self.seq_len)*self.downsample).reshape(-1,1)
+            seq_idx = (inter_idxs + begin_idxs).T.flatten()
+
+
+        return seq_idx
+
+
+    def __getitem__(self, index):
+        vpath, vlen, aid = self.video_info.iloc[index]
+
+        assert vlen > 0
+
+        # if (vpath == 'Kinetics400/frame_150/train/lswHseMTGL0_000097_000107'):
+        #     print(vpath, vlen, aid)
+
+        idx_block = self.idx_sampler(vlen)
+        
+        seq = []
+        for i in idx_block:
+            img_name = "image_%05d.jpg" % (i+1)
+            imgs = pil_loader(os.path.join(self.frame_root, str(vpath), img_name))
+            seq.append(imgs)
+
+
+        if self.transform_consistent is not None: 
+                seq = self.transform_consistent(seq) # apply same transform
+
+        if self.transform_inconsistent is not None: 
+            for i in range(self.num_seq):
+                sub_seq = self.transform_inconsistent(seq[i*self.seq_len:(i+1)*self.seq_len])
+                seq[i*self.seq_len:(i+1)*self.seq_len] = sub_seq
+                
+
+        (C, H, W) = seq[0].size()
+        seq = torch.stack(seq, 0)
+        seq = seq.view(self.num_seq, self.seq_len, C, H, W) # N, T, C, H, W
+        seq = seq.permute(0,2,1,3,4) # N, C, T, H, W
+        # seq = seq.view(self.num_seq*self.seq_len, C, H, W) # N*T, C, H, W
+        # seq = seq.permute(1,0,2,3) # C, N*T, H, W
+        
+        if self.return_label:
+            label = torch.LongTensor([aid])
+            return seq, label
+        
+        return seq
+
+    def __len__(self):
+        return len(self.video_info)
+
+
+class MiniK(data.Dataset):
+    def __init__(self,
+                mode='train',
+                transform_consistent=None,
+                transform_inconsistent=None,
+                seq_len:int=4,
+                num_seq:int=3,
+                downsample:int=8,
+                return_label=False,
+                dim=150,
+                csv_root='/home/siyich/Datasets/Videos/Kinetics400',
+                frame_root='/home/siyich/Datasets/Videos',
+                random=False,
+                inter_len:int=0, # num of frames (after downsampling) between two clips
+                fraction=1.0
+                ):
+        self.mode = mode
+        self.transform_consistent = transform_consistent
+        self.transform_inconsistent = transform_inconsistent
+        self.seq_len=seq_len
+        self.num_seq = num_seq
+        self.downsample = downsample
+        self.return_label = return_label
+        self.dim = dim
+        self.csv_root = csv_root
+        self.frame_root = frame_root
+        self.random = random
+        self.inter_len = inter_len
+        self.total_len = ((self.seq_len + self.inter_len)*self.num_seq - self.inter_len)*self.downsample
+        self.fraction = fraction
+        
+        begin_idxs = np.arange(self.num_seq)*self.downsample*(self.seq_len+self.inter_len) 
+        inter_idxs = (np.arange(self.seq_len)*self.downsample).reshape(-1,1)
+        self.base_seq_idx = (inter_idxs + begin_idxs).T.flatten()
+
+        if dim == 150:
+            folder_name = 'minik_150'
+        else:
+            folder_name = 'minik_240'
+
+        # splits
+        if mode == 'train':
+            split = os.path.join(self.csv_root, folder_name, 'train.csv')
+            video_info = pd.read_csv(split, header=None)
+        elif mode == 'val': 
+            split = os.path.join(self.csv_root, folder_name, 'validate.csv')
+            video_info = pd.read_csv(split, header=None)
+        elif mode == 'test': 
+            split = os.path.join(self.csv_root, folder_name, 'test.csv')
+            video_info = pd.read_csv(split, header=None)
+        else: raise ValueError('wrong mode')
+
+        # filter out too short videos:
+        drop_idx = []
+        for idx, row in video_info.iterrows():
+            _, vlen, _ = row
+            # if vlen-self.total_len <= 0:
+            #     drop_idx.append(idx)
+
+            if vlen-self.total_len <= 0 and not self.random:
+                drop_idx.append(idx)
+            if vlen-self.seq_len*self.downsample <= 0:
+                drop_idx.append(idx)
+        self.video_info = video_info.drop(drop_idx, axis=0)
+        print("Droped number of videos:", len(drop_idx))
+
+        # if self.fraction < 1: 
+        #     self.video_info = self.video_info.sample(frac=self.fraction)
+        # shuffle not required due to external sampler
+
+    def idx_sampler(self, vlen):
+        '''sample index from a video'''
+        
+        # if vlen-self.total_len <= 0: raise ValueError('video too short')
+        if not self.random:
+            n = 1
+            start_idx = np.random.choice(range(vlen-self.total_len), n)
+            seq_idx = self.base_seq_idx + start_idx
+
+            # seq_idx = np.arange(self.seq_len*self.num_seq)*self.downsample + start_idx
+        else:
+            # n = self.seq_len*self.num_seq
+            # seq_idx = np.random.choice(range(vlen-self.total_len), n)
+            n = self.num_seq
+            begin_idxs = np.random.choice(range(vlen-self.seq_len*self.downsample), n) 
+            inter_idxs = (np.arange(self.seq_len)*self.downsample).reshape(-1,1)
+            seq_idx = (inter_idxs + begin_idxs).T.flatten()
+
+
+        return seq_idx
+
+
+    def __getitem__(self, index):
+        vpath, vlen, aid = self.video_info.iloc[index]
+
+        assert vlen > 0
+
+        # if (vpath == 'Kinetics400/frame_150/train/lswHseMTGL0_000097_000107'):
+        #     print(vpath, vlen, aid)
+
+        idx_block = self.idx_sampler(vlen)
+        
+        seq = []
+        for i in idx_block:
+            img_name = "image_%05d.jpg" % (i+1)
+            imgs = pil_loader(os.path.join(self.frame_root, str(vpath), img_name))
+            seq.append(imgs)
+
+
+        if self.transform_consistent is not None: 
+                seq = self.transform_consistent(seq) # apply same transform
+
+        if self.transform_inconsistent is not None: 
+            for i in range(self.num_seq):
+                sub_seq = self.transform_inconsistent(seq[i*self.seq_len:(i+1)*self.seq_len])
+                seq[i*self.seq_len:(i+1)*self.seq_len] = sub_seq
+                
+
+        (C, H, W) = seq[0].size()
+        seq = torch.stack(seq, 0)
+        seq = seq.view(self.num_seq, self.seq_len, C, H, W) # N, T, C, H, W
+        seq = seq.permute(0,2,1,3,4) # N, C, T, H, W
+        # seq = seq.view(self.num_seq*self.seq_len, C, H, W) # N*T, C, H, W
+        # seq = seq.permute(1,0,2,3) # C, N*T, H, W
+        
+        if self.return_label:
+            label = torch.LongTensor([aid])
+            return seq, label
+        
+        return seq
+
+    def __len__(self):
+        return len(self.video_info)
 
 
 def test():
@@ -228,23 +1002,30 @@ def test():
         # Normalize()
     ])
 
-    dataset = UCF101(mode='val', frame_root='/data')
+    # dataset = UCF101(mode='val', frame_root='/data')
+    # print(len(dataset))
+    # val_data = get_data_ucf(transform_consistent, transform_inconsistent, 'val', frame_root='/data')
+
+    dataset = Kinetics400(mode='train', fraction=1)
     print(len(dataset))
-    val_data = get_data_ucf(transform_consistent, transform_inconsistent, 'val', frame_root='/data')
+    val_data = get_data_k400(transform_consistent, transform_inconsistent, 'train', fraction=1)
 
     i=0
     for data in val_data:
-        images, _ = data
-        # print(images, label)
-        # print(images.size())
-        transform_back = T.ToPILImage()
-        for j in range(4):
-            for k in range(3):
-                images0 = transform_back(images.permute(0,1,3,2,4,5)[0,k,j])
-                images0.save("vis%s_%s_%s.jpg" % (i, k, j))
-        i += 1
-        if i >= 5:
-            break
+        try:
+            images, _ = data
+            # print(images, label)
+            # print(images.size())
+            transform_back = T.ToPILImage()
+            for j in range(1):
+                for k in range(1):
+                    images0 = transform_back(images.permute(0,1,3,2,4,5)[0,k,j])
+                    images0.save("kinetics/vis%s_%s_%s.jpg" % (i, k, j))
+            i += 1
+        # if i >= 5:
+        #     break
+        except:
+            print(i)
 
 
 if __name__ == '__main__':

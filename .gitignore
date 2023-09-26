@@ -142,3 +142,5 @@ data/
 checkpoints*
 *.csv
 *.gz
+
+.cache*

@@ -93,7 +93,8 @@ class KNN():
         feature_dim = features.shape[-1]
         features = features.cpu().view(-1, feature_dim).numpy()
         labels = labels.cpu().view(-1).numpy()
-        acc = 100 * np.mean(cross_val_score(self.cls, features, labels))
+        # acc = 100 * np.mean(cross_val_score(self.cls, features, labels))
+        acc = self.cls.score(features, labels)
         return acc
 
     def _find_best_indices(self, h_query, h_ref):

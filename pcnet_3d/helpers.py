@@ -109,25 +109,145 @@ def vic_reg_nonorm_loss(x, y, mse_l, std_l, cov_l, sub=False): #same as paper
     return total_loss
 
 def reg_mse_loss(x, y):
-    x = F.normalize(x, dim=-1, p=2)
-    y = F.normalize(y, dim=-1, p=2)
-    return F.mse_loss(x, y)
+    # x2 = F.normalize(x, dim=-1, p=2)
+    # y2 = F.normalize(y, dim=-1, p=2)
+    x2 = F.normalize(x, dim=0, p=2)
+    y2 = F.normalize(y, dim=0, p=2)
+    return F.mse_loss(x2, y2)
 
 def mse_loss(x, y):
-    return F.mse_loss(x, y)
+    loss = F.mse_loss(x, y)
+    print("mse loss:", loss)
+    return loss
 
 def std_loss(x, lam=0.0001):
     y = x - x.mean(dim=0)
     std_x = torch.sqrt(y.var(dim=0) + lam)
-    return torch.mean(F.relu(1 - std_x)) / 2
+    loss_std = torch.mean(F.relu(1 - std_x)) / 2
+
+    print("std loss:", loss_std)
+    return loss_std
+
+# def std_n_loss(x, lam=0.0001):
+#     y = x - x.mean(dim=0)
+#     std_x = torch.sqrt(y.var(dim=0) + lam)
+#     return torch.mean(F.relu(std_x - 1)) / 2
+
+def std_2_loss(x, lam=0.0001):
+    (B, D) = x.shape
+    y = x - x.mean(dim=0)
+    # y = F.normalize(x, dim=-1, p=2)
+    # y = F.normalize(x, dim=0, p=2)
+
+    std_x = y.var(dim=0)
+    loss_std = (std_x - 1).pow_(2).sum().div(D)
+    print("std:", std_x.mean())
+    print("std loss:", loss_std)
+
+    return loss_std
+
+    # std_x = torch.sqrt(x.var(dim=0) + lam)
+    # return torch.mean(F.relu(1 - std_x)) / 2
+
+def std_4_loss(x, lam=0.0001):
+    (B, D) = x.shape
+    y = x - x.mean(dim=0)
+    # y = F.normalize(x, dim=-1, p=2)
+    # y = F.normalize(x, dim=0, p=2)
+
+    std_x = y.var(dim=0)
+    loss_std = (std_x - 1).pow_(4).sum().div(D)
+    print("std loss:", loss_std)
+
+    return loss_std
+
+def std_3_loss(x, lam=0.0001):
+    (B, D) = x.shape
+    y1 = F.relu(x)
+    y2 = F.relu(-x)
+    # y = F.normalize(x, dim=-1, p=2)
+    # y = F.normalize(x, dim=0, p=2)
+
+    std_x1 = y1.var(dim=0)
+    std_x2 = y2.var(dim=0)
+    loss_std = (std_x1 - 1).pow_(2).sum().div(D) + (std_x2 - 1).pow_(2).sum().div(D)
+    print("std loss:", loss_std)
+
+    return loss_std
 
 def cov_loss(x):
     (B, D) = x.shape
     y = x - x.mean(dim=0)
+    # y = F.normalize(x, dim=-1, p=2)
+    # y = F.normalize(x, dim=0, p=2)
+
     cov_x = (y.T @ y) / (B - 1)
     loss_std = off_diagonal(cov_x).pow_(2).sum().div(D)
     # print(loss_std)
+
+    print("cov loss:", loss_std)
     return loss_std
+
+def cov_2_loss(x):
+    (B, D) = x.shape
+    y = x - x.mean(dim=0)
+    # y = F.normalize(x, dim=-1, p=2)
+    # y = F.normalize(x, dim=0, p=2)
+
+    cov_x = (y.T @ y) / (B - 1)
+    loss_std = off_diagonal(cov_x).pow_(2).sum().div(D*D/2048)
+    # print(loss_std)
+
+    print("cov loss:", loss_std)
+    return loss_std
+
+def cov_4_loss(x):
+    (B, D) = x.shape
+    y = x - x.mean(dim=0)
+    # y = F.normalize(x, dim=-1, p=2)
+    # y = F.normalize(x, dim=0, p=2)
+
+    cov_x = (y.T @ y) / (B - 1)
+    loss_std = off_diagonal(cov_x).pow_(4).sum().div(D)
+    # print(loss_std)
+
+    print("cov loss:", loss_std)
+    return loss_std
+
+def sparse_loss(x):
+    B = x.shape[0]
+    D = x.shape[-1]
+
+    # print(B, D)
+
+    # demean, norm
+    # y = x - x.mean(dim=0)
+    # y = F.normalize(y, dim=-1, p=2)
+
+    # normalize each difference
+    y = F.normalize(x, dim=-1, p=2)
+    print("Vector L2 norm", torch.norm(y[0,0,:], p=2))
+    print("Vector L1 norm", torch.norm(y[0,0,:], p=1))
+
+    # # nothing
+    # y = x
+
+    # form 1A
+    loss = torch.norm(y, p=1) / B / D
+    # # form 1B
+    # loss = torch.norm(x, p=1) / B 
+
+    # # potential 1
+    # l1 = torch.norm(y, p=1) / B / D
+    # loss = torch.sqrt(l1.pow_(2) + 0.0001)
+
+    # # potential 2
+    # loss = torch.sqrt(y.pow_(2) + 0.0001).sum() / B / D 
+
+    # # potential 2 2
+    # loss = torch.sqrt(y.pow_(2) + 0.000001).sum() / B / D 
+
+    return loss
 
 
 
@@ -336,8 +456,8 @@ class LatentODEblock(nn.Module):
             relu_last: bool = False,
             odefunc=LatentODEfunc, 
             solver: str = 'dopri5',
-            rtol: float = 1e-4, 
-            atol: float = 1e-4, 
+            rtol: float = 1e-1, 
+            atol: float = 1e-1, 
             adjoint: bool = False
             ):
         super().__init__()

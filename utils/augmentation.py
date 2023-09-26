@@ -14,11 +14,12 @@ import torchvision.transforms.functional as F
 def transform_consistent():
     transform = transforms.Compose([
         RandomHorizontalFlip(consistent=True),
-        RandomCrop(size=112, consistent=True),
+        # RandomCrop(size=112, consistent=True),
+        RandomSizedCrop(size=128, consistent=True), # Siyi: strong crop
         Scale(size=(112,112)),
-        # GaussianBlur(size=112, p=0.5, consistent=True),
-        # ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05, p=0.8),
-        # RandomGray(consistent=False, p=0.2),
+        GaussianBlur(size=112, p=0.5, consistent=True),
+        ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05, p=0.8),
+        RandomGray(consistent=False, p=0.2),
         # ToTensor(),
         # Normalize()
     ])
@@ -30,9 +31,9 @@ def transform_inconsistent():
         # RandomHorizontalFlip(consistent=True),
         # RandomCrop(size=112, consistent=True),
         # Scale(size=(112,112)),
-        GaussianBlur(size=112, p=0.5, consistent=True),
-        ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05, p=0.8),
-        RandomGray(consistent=False, p=0.2),
+        # GaussianBlur(size=112, p=0.5, consistent=True),
+        # ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05, p=0.8),
+        # RandomGray(consistent=False, p=0.2),
         ToTensor(),
         Normalize()
     ])
@@ -42,7 +43,8 @@ def transform_inconsistent():
 def default_transform():
     transform = transforms.Compose([
         RandomHorizontalFlip(consistent=True),
-        RandomCrop(size=112, consistent=True),
+        # RandomCrop(size=112, consistent=True),
+        RandomSizedCrop(size=128, consistent=True), # Siyi: strong crop
         Scale(size=(112,112)),
         GaussianBlur(size=112, p=0.5, consistent=True),
         # ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.25, p=1.0), # DPC
@@ -227,7 +229,8 @@ class RandomSizedCrop:
         if random.random() < self.threshold: # do RandomSizedCrop
             for attempt in range(10):
                 area = img1.size[0] * img1.size[1]
-                target_area = random.uniform(0.5, 1) * area
+                # target_area = random.uniform(0.5, 1) * area
+                target_area = random.uniform(0.08, 1) * area
                 aspect_ratio = random.uniform(3. / 4, 4. / 3)
 
                 w = int(round(math.sqrt(target_area * aspect_ratio)))

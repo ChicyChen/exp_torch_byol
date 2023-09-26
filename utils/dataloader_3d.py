@@ -61,7 +61,7 @@ def get_data_hmdb(transform=None,
                                       batch_size=batch_size,
                                       sampler=sampler,
                                       shuffle=False,
-                                      num_workers=4,
+                                      num_workers=128,
                                       pin_memory=True,
                                       drop_last=True)
     else:
@@ -69,7 +69,7 @@ def get_data_hmdb(transform=None,
                                       batch_size=batch_size,
                                       sampler=sampler,
                                       shuffle=False,
-                                      num_workers=4,
+                                      num_workers=128,
                                       pin_memory=True,
                                       drop_last=True)
     print('"%s" dataset size: %d' % (mode, len(dataset)))
@@ -230,7 +230,7 @@ def get_data_ucf(transform=None,
                                       batch_size=batch_size,
                                       sampler=sampler,
                                       shuffle=False,
-                                      num_workers=4,
+                                      num_workers=128,
                                       pin_memory=True,
                                       drop_last=True)
     else:
@@ -238,7 +238,7 @@ def get_data_ucf(transform=None,
                                       batch_size=batch_size,
                                       sampler=sampler,
                                       shuffle=False,
-                                      num_workers=4,
+                                      num_workers=128,
                                       pin_memory=True,
                                       drop_last=True)
     print('"%s" dataset size: %d' % (mode, len(dataset)))
@@ -416,7 +416,7 @@ def get_data_mnist(
                                       batch_size=batch_size,
                                       sampler=sampler,
                                       shuffle=False,
-                                      #   num_workers=32,
+                                      #   num_workers=128,
                                       pin_memory=True,
                                       drop_last=True)
     else:
@@ -424,7 +424,7 @@ def get_data_mnist(
                                       batch_size=batch_size,
                                       sampler=sampler,
                                       shuffle=False,
-                                      #   num_workers=32,
+                                      #   num_workers=128,
                                       pin_memory=True,
                                       drop_last=True)
     print('"%s" dataset size: %d' % (mode, len(dataset)))

@@ -43,12 +43,12 @@ parser.add_argument('--epoch_num', default=100, type=int)
 
 parser.add_argument('--num_seq', default=1, type=int)
 parser.add_argument('--seq_len', default=8, type=int)
-parser.add_argument('--downsample', default=8, type=int)
+parser.add_argument('--downsample', default=3, type=int)
 parser.add_argument('--num_aug', default=1, type=int)
 
 parser.add_argument('--ode', action='store_true')
 
-parser.add_argument('--img_size', default=112, type=int)
+parser.add_argument('--img_size', default=128, type=int)
 parser.add_argument('--r21d', action='store_true')
 
 
@@ -69,7 +69,7 @@ parser.add_argument('--r21d', action='store_true')
 def test_transform():
     transform = transforms.Compose([
         RandomCrop(size=args.img_size, consistent=True),
-        Scale(size=(args.img_size,args.img_size)),
+        Scale(size=(128, 128)),
         ToTensor(),
         Normalize()
     ])
@@ -178,9 +178,10 @@ def main():
                                     downsample=args.downsample,
                                     num_aug=args.num_aug,
                                     dim=dim,
+                                    frame_root='/data'
                                     )
         test_loader = get_data_ucf(batch_size=args.batch_size, 
-                                    mode='val', 
+                                    mode='test', 
                                     # transform=default_transform(), 
                                     # transform2=default_transform(),
                                     transform=test_transform(),
@@ -190,6 +191,7 @@ def main():
                                     downsample=args.downsample,
                                     num_aug=args.num_aug,
                                     dim=dim,
+                                    frame_root='/data'
                                     )
     elif args.hmdb:
         logging.info(f"k-nn accuracy performed on hmdb \n")
@@ -204,7 +206,7 @@ def main():
                                     downsample=args.downsample,
                                     num_aug=args.num_aug)
         test_loader = get_data_hmdb(batch_size=args.batch_size, 
-                                    mode='val', 
+                                    mode='test', 
                                     transform=test_transform(),
                                     transform2=test_transform(),
                                     # transform=default_transform(), 
@@ -226,7 +228,7 @@ def main():
                                     downsample=args.downsample,
                                     num_aug=args.num_aug)
         test_loader = get_data_mnist(batch_size=args.batch_size, 
-                                    mode='val', 
+                                    mode='test', 
                                     transform=test_transform(),
                                     transform2=test_transform(),
                                     # transform=default_transform(), 

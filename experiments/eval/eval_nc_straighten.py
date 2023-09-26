@@ -36,9 +36,9 @@ parser.add_argument('--kinetics', action='store_true')
 parser.add_argument('--ckpt_folder', default='checkpoints/3dbase_ucf101_lr0.0001_wd1e-05', type=str)
 parser.add_argument('--epoch_num', default=100, type=int)
 
-parser.add_argument('--num_seq', default=3, type=int)
+parser.add_argument('--num_seq', default=1, type=int)
 parser.add_argument('--seq_len', default=8, type=int)
-parser.add_argument('--downsample', default=2, type=int)
+parser.add_argument('--downsample', default=8, type=int)
 parser.add_argument('--num_aug', default=1, type=int)
 
 parser.add_argument('--ode', action='store_true')

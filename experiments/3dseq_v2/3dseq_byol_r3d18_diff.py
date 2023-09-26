@@ -12,6 +12,7 @@ sys.path.append("/home/siyich/byol-pytorch/utils")
 from byolseq_3d import BYOL_SEQ
 # from resnet_modify import r3d_18_slow
 
+import random
 import math
 import numpy as np
 import torch
@@ -20,7 +21,7 @@ from torchvision import models
 from torchvision import transforms as T
 import torch.nn.functional as F
 
-from dataloader_v2 import get_data_ucf, get_data_k400
+from dataloader_v2 import get_data_ucf, get_data_k400, get_data_mk200, get_data_mk400, get_data_minik
 from torch.utils.data import DataLoader
 
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -106,6 +107,9 @@ parser.add_argument('--ema', default=0.99, type=float, help='EMA')
 parser.add_argument('--cos_ema', action='store_true')
 parser.add_argument('--r21d', action='store_true')
 
+parser.add_argument('--mk200', action='store_true')
+parser.add_argument('--mk400', action='store_true')
+parser.add_argument('--minik', action='store_true')
 parser.add_argument('--k400', action='store_true')
 parser.add_argument('--fraction', default=1.0, type=float)
 
@@ -113,6 +117,7 @@ def adjust_learning_rate(args, optimizer, loader, step):
     max_steps = args.epochs * len(loader)
     args.max_steps = max_steps
     warmup_steps = 10 * len(loader)
+    # warmup_steps = 0
     base_lr = args.base_lr * args.batch_size / 256
     if step < warmup_steps:
         lr = base_lr * step / warmup_steps
@@ -186,7 +191,7 @@ class LARS(optim.Optimizer):
                 p.add_(mu, alpha=-g["lr"])
 
 
-def train_one_epoch(args, model, train_loader, optimizer, epoch, gpu=None, scaler=None, train = True, num_aug = 1):
+def train_one_epoch(args, model, train_loader, optimizer, epoch, gpu=None, scaler=None, train = True, diff=False, mix=False, mix2=False):
     # global have_print
 
     if train:
@@ -200,6 +205,20 @@ def train_one_epoch(args, model, train_loader, optimizer, epoch, gpu=None, scale
         
         video, label = data # B, C, T, H, W
         label = label.to(gpu)
+
+        if random.random() < 0.5:
+            video = video[:,:,:,1:,:,:] - video[:,:,:,:-1,:,:]
+
+        if diff:
+            video = video[:,:,:,1:,:,:] - video[:,:,:,:-1,:,:]
+        if mix:
+            video_diff = video[:,:,:,1:,:,:] - video[:,:,:,:-1,:,:]
+            video = video[:,:,:,:-1,:,:]
+            video[:,1,:,:,:,:] = video_diff[:,1,:,:,:,:]
+        if mix2:
+            video_diff = video[:,:,:,1:,:,:] - video[:,:,:,:-1,:,:]
+            video = video[:,:,:,:-1,:,:]
+            video[:,0,:,:,:,:] = video_diff[:,0,:,:,:,:]
 
         lr = adjust_learning_rate(args, optimizer, train_loader, step)
 
@@ -261,11 +280,17 @@ def main():
 
     if args.k400:
         dataname = 'k400'
+    elif args.mk200:
+        dataname = 'mk200'
+    elif args.mk400:
+        dataname = 'mk400'
+    elif args.minik:
+        dataname = 'minik'
     else:
         dataname = 'ucf'
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_%s_%s_f%s_%s_112/hid%s_hidpre%s_prj%s_prl%s_pre%s_np%s_pl%s_il%s_ns%s/mse%s_std%s_cov%s_sym%s_closed%s/bs%s_lr%s_wd%s_ds%s_ema%s_cosema%s' \
-        % (ind_name, dataname, args.fraction, model_name, args.proj_hidden, args.pred_hidden, args.projection, args.proj_layer, args.predictor, args.num_predictor, args.pred_layer, args.inter_len, args.num_seq, args.mse_l, args.std_l, args.cov_l, args.sym_loss, args.closed_loop, args.batch_size, args.base_lr, args.wd, args.downsample, args.ema, args.cos_ema)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_diff6_%s_%s_f%s_%s_112/hid%s_hidpre%s_prj%s_prl%s_pre%s_np%s_pl%s_il%s_ns%s/mse%s_std%s_cov%s_sym%s_closed%s/bs%s_lr%s_wd%s_ds%s_sl%s_ema%s_cosema%s' \
+        % (ind_name, dataname, args.fraction, model_name, args.proj_hidden, args.pred_hidden, args.projection, args.proj_layer, args.predictor, args.num_predictor, args.pred_layer, args.inter_len, args.num_seq, args.mse_l, args.std_l, args.cov_l, args.sym_loss, args.closed_loop, args.batch_size, args.base_lr, args.wd, args.downsample, args.seq_len, args.ema, args.cos_ema)
 
     if args.rank == 0:
         if not os.path.exists(ckpt_folder):
@@ -348,6 +373,12 @@ def main():
 
     if args.k400:
         loader_method = get_data_k400
+    elif args.mk200:
+        loader_method = get_data_mk200
+    elif args.mk400:
+        loader_method = get_data_mk400
+    elif args.minik:
+        loader_method = get_data_minik
     else:
         loader_method = get_data_ucf
 
@@ -389,6 +420,8 @@ def main():
     
     train_loss_list = []
     test_loss_list = []
+    train_loss_list3 = []
+    train_loss_list4 = []
     epoch_list = range(args.start_epoch, args.epochs)
     lowest_loss = np.inf
     best_epoch = 0
@@ -396,21 +429,36 @@ def main():
     # start_time = last_logging = time.time()
     scaler = torch.cuda.amp.GradScaler()
     for i in epoch_list:
+
+        train_loss2 = train_one_epoch(args, model, train_loader, optimizer, i, gpu, scaler, diff=True) 
+        # train_loss3 = train_one_epoch(args, model, train_loader, optimizer, i, gpu, scaler) 
+
+        train_loss3 = train_one_epoch(args, model, train_loader, optimizer, i, gpu, scaler, mix=True)
+        train_loss4 = train_one_epoch(args, model, train_loader, optimizer, i, gpu, scaler, mix2=True)
+    
         train_loss = train_one_epoch(args, model, train_loader, optimizer, i, gpu, scaler)
         # test_loss = train_one_epoch(args, model, test_loader, optimizer, i, gpu, scaler, False)
-        test_loss = train_loss
+        test_loss = train_loss2
         
         # current_time = time.time()
         if args.rank == 0:
             if test_loss < lowest_loss:
                 lowest_loss = test_loss
                 best_epoch = i + 1
+
             train_loss_list.append(train_loss)
             test_loss_list.append(test_loss)
+            train_loss_list3.append(train_loss3)
+            train_loss_list4.append(train_loss4)
+
             print('Epoch: %s, Train loss: %s' % (i, train_loss))
-            print('Epoch: %s, Test loss: %s' % (i, test_loss))
+            print('Epoch: %s, Train2 loss: %s' % (i, test_loss))
+            print('Epoch: %s, Train3 loss: %s' % (i, train_loss3))
+            print('Epoch: %s, Train4 loss: %s' % (i, train_loss4))
             logging.info('Epoch: %s, Train loss: %s' % (i, train_loss))
-            logging.info('Epoch: %s, Test loss: %s' % (i, test_loss))
+            logging.info('Epoch: %s, Train2 loss: %s' % (i, test_loss))
+            logging.info('Epoch: %s, Train3 loss: %s' % (i, train_loss3))
+            logging.info('Epoch: %s, Train4 loss: %s' % (i, train_loss4))
 
             if (i+1)%10 == 0 or i<20:
                 # save your improved network
@@ -436,6 +484,9 @@ def main():
         # if not args.no_val:
         # plt.plot(epoch_list, test_loss_list, label = 'val')
         # plt.title('Train and test loss')
+        plt.plot(epoch_list, test_loss_list, label = 'train2')
+        plt.plot(epoch_list, train_loss_list3, label = 'train3')
+        plt.plot(epoch_list, train_loss_list4, label = 'train4')
 
         plt.legend()
         plt.savefig(os.path.join(

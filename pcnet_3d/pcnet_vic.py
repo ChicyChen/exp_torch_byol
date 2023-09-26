@@ -15,6 +15,7 @@ import numpy as np
 from operator import add 
 
 from helpers import *
+import torch.distributed as dist
 
     
 # main class
@@ -37,6 +38,7 @@ class PCNET_VIC(nn.Module):
         loop_l = 0.0,
         std_l = 25.0,
         cov_l = 1.0,
+        spa_l = 0.0,
         bn_last = False,
         pred_bn_last = False,
         # pred_mode = 0, # 0: z1->z2', z2->z3'; 1: z1->z2'->z3'
@@ -81,6 +83,7 @@ class PCNET_VIC(nn.Module):
         self.loop_l = loop_l
         self.std_l = std_l
         self.cov_l = cov_l
+        self.spa_l = spa_l
 
         self.infonce = infonce
         self.sub_loss = sub_loss
@@ -95,7 +98,7 @@ class PCNET_VIC(nn.Module):
 
         # while using singleton, if we don't do an initial pass, the memory would explode
         # send a mock image tensor to instantiate singleton parameters
-        self.forward(torch.ones(2, 2, 3, clip_size, image_size, image_size, device=device))
+        self.forward(torch.ones(2, 2, 3, clip_size, image_size, image_size, device=device), initial = True)
 
 
     def loss_fn(self, x, y):
@@ -115,7 +118,8 @@ class PCNET_VIC(nn.Module):
 
     def forward(
         self,
-        x # B, N, C, T, H, W
+        x, # B, N, C, T, H, W
+        initial = False
     ):
         assert not (self.training and x.shape[0] == 1), 'you must have greater than 1 sample when training, due to the batchnorm in the projection layer'
         
@@ -126,7 +130,7 @@ class PCNET_VIC(nn.Module):
         gt_z_all = gt_z_all.reshape(B, N, -1) # B, N, D
 
         # if no predictor
-        if self.pred_layer == 0:
+        if self.pred_layer == 0 and self.infonce:
             # print("zero pred layer", self.pred_layer)
             loss_one = self.loss_fn(gt_z_all[:, :-1, :], gt_z_all[:, 1:, :]) 
             if self.sym_loss:
@@ -163,6 +167,8 @@ class PCNET_VIC(nn.Module):
 
         pred_z_forward = self.predictor_forward(gt_z_all[:, :-1, :].reshape(B*(N-1),-1)).reshape(B, N-1, -1)
         pred_loss = mse_loss(pred_z_forward, gt_z_all[:, 1:, :]) / (N-1)
+        # pred_loss = reg_mse_loss(pred_z_forward, gt_z_all[:, 1:, :]) / (N-1)
+
 
         loop_loss = 0.0
         if self.closed_loop:
@@ -171,6 +177,8 @@ class PCNET_VIC(nn.Module):
             else:
                 closed_z_reverse = self.predictor_reverse(pred_z_forward.reshape(B*(N-1), -1), forward = False).reshape(B, N-1, -1)
             loop_loss += mse_loss(closed_z_reverse, gt_z_all[:, :-1, :]) / (N-1)
+            # loop_loss += reg_mse_loss(closed_z_reverse, gt_z_all[:, :-1, :]) / (N-1)
+
 
         if self.sym_loss:
             if self.pred_layer == 0:
@@ -178,22 +186,46 @@ class PCNET_VIC(nn.Module):
             else:
                 pred_z_reverse = self.predictor_reverse(gt_z_all[:, 1:, :].reshape(B*(N-1),-1), forward = False).reshape(B, N-1, -1)
             pred_loss += mse_loss(pred_z_reverse, gt_z_all[:, :-1, :]) / (N-1)
+            # pred_loss += reg_mse_loss(pred_z_reverse, gt_z_all[:, :-1, :]) / (N-1)
+
             pred_loss = pred_loss / 2
             if self.closed_loop:
                 closed_z_forward = self.predictor_forward(pred_z_reverse.reshape(B*(N-1), -1)).reshape(B, N-1, -1)
                 loop_loss += mse_loss(closed_z_forward, gt_z_all[:, 1:, :]) / (N-1)
+                # loop_loss += reg_mse_loss(closed_z_forward, gt_z_all[:, 1:, :]) / (N-1)
+
                 loop_loss = loop_loss / 2
 
-        # gt_z_all = torch.cat(FullGatherLayer.apply(gt_z_all.reshape(B*N, -1)), dim=0)
+        if initial:
+            pass
+        else:
+            gt_z_all = torch.cat(FullGatherLayer.apply(gt_z_all), dim=0)
+
+
+
+
+        # sparsity on differences
+        spa_lo = sparse_loss(gt_z_all[:, :-1, :] - gt_z_all[:, 1:, :]) / (N - 1)
+        print("Difference Sparse", spa_lo)
+
+        # sparsity on representations
+        spa_lo = sparse_loss(gt_z_all) / N
+        print("Representation Sparse", spa_lo)
+
+        
+
         D = gt_z_all.shape[-1]
         if self.sub_loss:
             gt_z_all = gt_z_all[:,:,torch.randperm(D)]
             D = int(D * self.sub_frac)
             gt_z_all = gt_z_all[:,:,:D]
+
+
         
         if self.reg_all:
             gt_z_all = gt_z_all.reshape(-1,D)
             std_lo = std_loss(gt_z_all) * 2
+            # std_lo = std_2_loss(gt_z_all)
             cov_lo = cov_loss(gt_z_all) * 2
         else:
             std_lo = 0.0
@@ -202,6 +234,7 @@ class PCNET_VIC(nn.Module):
             # print(gt_z_all[:,0,:].shape)
             for i in range(N):
                 std_lo += std_loss(gt_z_all[:,i,:]) * 2
+                # std_lo += std_2_loss(gt_z_all[:,i,:])
                 cov_lo += cov_loss(gt_z_all[:,i,:]) * 2
             std_lo = std_lo / N
             cov_lo = cov_lo / N
@@ -209,9 +242,29 @@ class PCNET_VIC(nn.Module):
             # print(cov_lo)
 
 
-        loss = pred_loss * self.mse_l + loop_loss * self.loop_l + std_lo * self.std_l + cov_lo * self.cov_l
+        loss = pred_loss * self.mse_l + loop_loss * self.loop_l + std_lo * self.std_l + cov_lo * self.cov_l + spa_lo * self.spa_l
         loss = loss*2
 
         # print(loss.item())
             
         return loss
+    
+
+class FullGatherLayer(torch.autograd.Function):
+    """
+    Gather tensors from all process and support backward propagation
+    for the gradients across processes.
+    """
+
+    @staticmethod
+    def forward(ctx, x):
+        output = [torch.zeros_like(x) for _ in range(dist.get_world_size())]
+        dist.all_gather(output, x)
+        return tuple(output)
+
+    @staticmethod
+    def backward(ctx, *grads):
+        all_gradients = torch.stack(grads)
+        dist.all_reduce(all_gradients)
+        return all_gradients[dist.get_rank()]
+

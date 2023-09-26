@@ -5,15 +5,15 @@ import argparse
 sys.path.append("/home/siyich/byol-pytorch/evaluation_3d")
 sys.path.append("/home/siyich/byol-pytorch/utils")
 
-# sys.path.append("/home/siyich/byol-pytorch/byol_3d")
-# from byol_3d import BYOL
-# from byolseq_3d import BYOL_SEQ
-# from pc_vic_3d import PC_VIC
+sys.path.append("/home/siyich/byol-pytorch/byol_3d")
+from byol_3d import BYOL
+from byolseq_3d import BYOL_SEQ
+from pc_vic_3d import PC_VIC
 
 from spectrum_difference import *
 
-sys.path.append("/home/siyich/byol-pytorch/pcnet_3d")
-from pcnet_vic import PCNET_VIC
+# sys.path.append("/home/siyich/byol-pytorch/pcnet_3d")
+# from pcnet_vic import PCNET_VIC
 
 import numpy as np
 import torch
@@ -70,6 +70,8 @@ def test_transform():
     return transform
 
 
+def exclude_bias_and_norm(p):
+    return p.ndim == 1
     
 
 def main():
@@ -97,37 +99,37 @@ def main():
     
     # resnet.maxpool = torch.nn.Identity()
 
-    # if args.byol:
-    #     # model_select = BYOL
-    #     model_select = BYOL_SEQ
-    # else:
-    #     model_select = PC_VIC
+    if args.byol:
+        # model_select = BYOL
+        model_select = BYOL_SEQ
+    else:
+        model_select = PC_VIC
 
-    model_select = PCNET_VIC
-
-    model = model_select(
-        resnet,
-        clip_size = 8,
-        image_size = 112,
-        hidden_layer = 'avgpool',
-        projection_size = 2048,
-        projection_hidden_size = 2048,
-        pred_hidden_size = 2048,
-        num_predictor = 1,
-        pred_layer = 0,
-        predictor = 1,
-        proj_layer = 3,
-        # pred_bn_last = True
-    )
+    # model_select = PCNET_VIC
 
     # model = model_select(
     #     resnet,
     #     clip_size = 8,
     #     image_size = 112,
     #     hidden_layer = 'avgpool',
-    #     projection_size = 256,
-    #     projection_hidden_size = 4096,
+    #     projection_size = 2048,
+    #     projection_hidden_size = 2048,
+    #     pred_hidden_size = 16,
+    #     num_predictor = 1,
+    #     pred_layer = 2,
+    #     predictor = 1,
+    #     proj_layer = 3,
+    #     # pred_bn_last = True
     # )
+
+    model = model_select(
+        resnet,
+        clip_size = 8,
+        image_size = 112,
+        hidden_layer = 'avgpool',
+        projection_size = 64,
+        projection_hidden_size = 1024,
+    )
 
     model = nn.DataParallel(model)
     model = model.to(cuda)
@@ -168,7 +170,9 @@ def main():
     else:
         # after training
         print("diff with ssl")
-        model.load_state_dict(torch.load(ckpt_path)) # load model
+        # model.load_state_dict(torch.load(ckpt_path)) # load model
+        ckpt = torch.load(ckpt_path, map_location="cpu")
+        model.load_state_dict(ckpt["model"])
 
     if args.byol:
         ssl_evaluator = Spectrum_Difference(model=model.module.online_encoder, device=cuda, input_num=args.input_num)

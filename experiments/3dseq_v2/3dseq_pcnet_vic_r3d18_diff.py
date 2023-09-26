@@ -4,14 +4,13 @@ from importlib import reload
 # reload(sys)
 # sys.setdefaultencoding('utf-8')
 import argparse
-# sys.path.append("/home/siyich/byol-pytorch/pcnet_3d")
-sys.path.append("/home/siyich/byol-pytorch/byol_3d")
+sys.path.append("/home/siyich/byol-pytorch/pcnet_3d")
 sys.path.append("/home/siyich/byol-pytorch/utils")
 # sys.path.append("/home/siyich/byol-pytorch/resnet")
-# from pcnet_vic import PCNET_VIC
-from byolseq_3d import BYOL_SEQ
+from pcnet_vic import PCNET_VIC
 # from resnet_modify import r3d_18_slow
 
+import random
 import math
 import numpy as np
 import torch
@@ -20,7 +19,7 @@ from torchvision import models
 from torchvision import transforms as T
 import torch.nn.functional as F
 
-from dataloader_v2 import get_data_ucf, get_data_k400
+from dataloader_v2 import get_data_ucf, get_data_k400, get_data_mk200, get_data_mk400, get_data_minik
 from torch.utils.data import DataLoader
 
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -33,9 +32,10 @@ import matplotlib.pyplot as plt
 from augmentation import *
 from distributed_utils import init_distributed_mode
 
-# python -m torch.distributed.launch --nproc_per_node=8 experiments/3dseq_v2/3dseq_byol_r3d18.py --sym_loss
-# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_byol_r3d18.py --sym_loss
-# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_byol_r3d18.py --sym_loss --r21d --cos_ema --epochs 50 --k400
+# python -m torch.distributed.launch --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss
+# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18.py --sym_loss
+
+# torchrun --standalone --nnodes=1 --nproc_per_node=8 experiments/3dseq_v2/3dseq_pcnet_vic_r3d18_diff.py --epochs 100 --batch_size 256 --sym_loss --base_lr 2.4 --projection 8192 --proj_hidden 8192 --pred_layer 0 --proj_layer 3 --cov_l 0.04 --std_l 1.0 --spa_l 0.0 --minik
 
 parser = argparse.ArgumentParser()
 
@@ -67,16 +67,17 @@ parser.add_argument('--sym_loss', action='store_true')
 parser.add_argument('--closed_loop', action='store_true')
 
 # parser.add_argument('--feature_size', default=512, type=int)
-parser.add_argument('--projection', default=256, type=int)
-parser.add_argument('--proj_hidden', default=4096, type=int)
-parser.add_argument('--pred_hidden', default=4096, type=int)
+parser.add_argument('--projection', default=2048, type=int)
+parser.add_argument('--proj_hidden', default=2048, type=int)
+parser.add_argument('--pred_hidden', default=16, type=int)
 parser.add_argument('--pred_layer', default=2, type=int)
-parser.add_argument('--proj_layer', default=2, type=int)
+parser.add_argument('--proj_layer', default=3, type=int)
 
 parser.add_argument('--mse_l', default=1.0, type=float)
-# parser.add_argument('--loop_l', default=0.0, type=float)
-parser.add_argument('--std_l', default=0.0, type=float)
-parser.add_argument('--cov_l', default=0.0, type=float)
+parser.add_argument('--loop_l', default=0.0, type=float)
+parser.add_argument('--std_l', default=1.0, type=float)
+parser.add_argument('--cov_l', default=0.04, type=float)
+parser.add_argument('--spa_l', default=0.0, type=float)
 
 parser.add_argument('--bn_last', action='store_true')
 parser.add_argument('--pred_bn_last', action='store_true')
@@ -86,12 +87,12 @@ parser.add_argument('--predictor', default=1, type=int)
 
 parser.add_argument('--infonce', action='store_true')
 parser.add_argument('--sub_loss', action='store_true')
-parser.add_argument('--sub_frac', default=0.2, type=float)
+parser.add_argument('--sub_frac', default=0.25, type=float)
 
 parser.add_argument('--base_lr', default=4.8, type=float)
 
 # Running
-parser.add_argument("--num-workers", type=int, default=10)
+parser.add_argument("--num-workers", type=int, default=32)
 parser.add_argument('--device', default='cuda',
                     help='device to use for training / testing')
 
@@ -102,17 +103,21 @@ parser.add_argument('--world-size', default=1, type=int,
 parser.add_argument('--dist-url', default='env://',
                     help='url used to set up distributed training')
 
-parser.add_argument('--ema', default=0.99, type=float, help='EMA')
-parser.add_argument('--cos_ema', action='store_true')
 parser.add_argument('--r21d', action='store_true')
 
+parser.add_argument('--mk200', action='store_true')
+parser.add_argument('--mk400', action='store_true')
+parser.add_argument('--minik', action='store_true')
 parser.add_argument('--k400', action='store_true')
 parser.add_argument('--fraction', default=1.0, type=float)
 
+parser.add_argument('--reg_all', action='store_true')
+
+
 def adjust_learning_rate(args, optimizer, loader, step):
     max_steps = args.epochs * len(loader)
-    args.max_steps = max_steps
-    warmup_steps = 10 * len(loader)
+    # warmup_steps = 10 * len(loader)
+    warmup_steps = 0
     base_lr = args.base_lr * args.batch_size / 256
     if step < warmup_steps:
         lr = base_lr * step / warmup_steps
@@ -186,7 +191,7 @@ class LARS(optim.Optimizer):
                 p.add_(mu, alpha=-g["lr"])
 
 
-def train_one_epoch(args, model, train_loader, optimizer, epoch, gpu=None, scaler=None, train = True, num_aug = 1):
+def train_one_epoch(args, model, train_loader, optimizer, epoch, gpu=None, scaler=None, train=True, diff=False, mix=False, mix2=False):
     # global have_print
 
     if train:
@@ -196,43 +201,56 @@ def train_one_epoch(args, model, train_loader, optimizer, epoch, gpu=None, scale
     total_loss = 0.
     num_batches = len(train_loader)
 
+    # for data in train_loader:
     for step, data in enumerate(train_loader, start=epoch * len(train_loader)):
-        
-        video, label = data # B, C, T, H, W
+        video, label = data # B, N, C, T, H, W
         label = label.to(gpu)
+        video = video.to(gpu)
+
+        if random.random() < 0.5:
+            video = video[:,:,:,1:,:,:] - video[:,:,:,:-1,:,:]
+
+        if diff:
+            video = video[:,:,:,1:,:,:] - video[:,:,:,:-1,:,:]
+        if mix:
+            video_diff = video[:,:,:,1:,:,:] - video[:,:,:,:-1,:,:]
+            video = video[:,:,:,:-1,:,:]
+            video[:,1,:,:,:,:] = video_diff[:,1,:,:,:,:]
+        if mix2:
+            video_diff = video[:,:,:,1:,:,:] - video[:,:,:,:-1,:,:]
+            video = video[:,:,:,:-1,:,:]
+            video[:,0,:,:,:,:] = video_diff[:,0,:,:,:,:]
+
+        # video_diff = video[:,:,:,1:,:,:] - video[:,:,:,:-1,:,:]
+        # print(video.shape)
 
         lr = adjust_learning_rate(args, optimizer, train_loader, step)
 
-        for i in range(args.num_seq-1):
-            # index1 = i*args.seq_len
-            # index2 = (i+1)*args.seq_len
-            # index3 = (i+2)*args.seq_len
-            images = video[:, i, :, :, :, :]
-            images2 = video[:, i+1, :, :, :, :]
-            images = images.to(gpu)
-            images2 = images2.to(gpu)
+        # if not have_print:
+        #     print(images.size(), images2.size())
+        #     have_print = True
 
-            # print(images.shape)
+        optimizer.zero_grad()
+        # loss = model(video)
+        with torch.cuda.amp.autocast():
+            # loss = (model(video) + model(video_diff)) / 2
+            loss = model(video)
+            # print(loss)
+            if train:
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+        # if train: # train separately for each step
+        #     # loss.sum().backward()
+        #     loss.mean().backward()
+        #     optimizer.step()
+        # else:
+        #     pass
+        # total_loss += loss.sum().item() 
+        total_loss += loss.mean().item() 
 
-            optimizer.zero_grad()
-            with torch.cuda.amp.autocast():
-                loss = model(images, images2)
-                # print(loss)
-                if train:
-                    scaler.scale(loss).backward()
-                    scaler.step(optimizer)
-                    scaler.update()
-                    # EMA update
-                    if args.cos_ema:
-                        model.module.update_moving_average(step, args.max_steps)
-                    else:
-                        model.module.update_moving_average()
-
-                    
-            total_loss += loss.sum().item() 
     
     return total_loss/num_batches
-
 
 def main():
     torch.manual_seed(233)
@@ -245,12 +263,12 @@ def main():
     print(args)
     gpu = torch.device(args.device)
     
-    # model_select = PCNET_VIC
+    model_select = PCNET_VIC
 
-    # if args.infonce:
-    #     ind_name = 'nce'
-    # else:
-    ind_name = 'byol'
+    if args.infonce:
+        ind_name = 'nce'
+    else:
+        ind_name = 'pcn'
 
     if args.r21d:
         model_name = 'r21d18'
@@ -261,70 +279,61 @@ def main():
 
     if args.k400:
         dataname = 'k400'
+    elif args.mk200:
+        dataname = 'mk200'
+    elif args.mk400:
+        dataname = 'mk400'
+    elif args.minik:
+        dataname = 'minik'
     else:
         dataname = 'ucf'
 
-    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_%s_%s_f%s_%s_112/hid%s_hidpre%s_prj%s_prl%s_pre%s_np%s_pl%s_il%s_ns%s/mse%s_std%s_cov%s_sym%s_closed%s/bs%s_lr%s_wd%s_ds%s_ema%s_cosema%s' \
-        % (ind_name, dataname, args.fraction, model_name, args.proj_hidden, args.pred_hidden, args.projection, args.proj_layer, args.predictor, args.num_predictor, args.pred_layer, args.inter_len, args.num_seq, args.mse_l, args.std_l, args.cov_l, args.sym_loss, args.closed_loop, args.batch_size, args.base_lr, args.wd, args.downsample, args.ema, args.cos_ema)
+    ckpt_folder='/home/siyich/byol-pytorch/checkpoints_diff6_%s_f%s_%s_%s_112/prj%s_hidproj%s_hidpre%s_prl%s_pre%s_np%s_pl%s_il%s_ns%s/mse%s_loop%s_std%s_cov%s_spa%s_rall%s_sym%s_closed%s_sub%s_sf%s/bs%s_lr%s_wd%s_ds%s_sl%s_nw_rand%s' \
+        % (dataname, args.fraction, ind_name, model_name, args.projection, args.proj_hidden, args.pred_hidden, args.proj_layer, args.predictor, args.num_predictor, args.pred_layer, args.inter_len, args.num_seq, args.mse_l, args.loop_l, args.std_l, args.cov_l, args.spa_l, args.reg_all, args.sym_loss, args.closed_loop, args.sub_loss, args.sub_frac, args.batch_size, args.base_lr, args.wd, args.downsample, args.seq_len, args.random)
 
     if args.rank == 0:
         if not os.path.exists(ckpt_folder):
             os.makedirs(ckpt_folder)
-        logging.basicConfig(filename=os.path.join(ckpt_folder, 'byol_train.log'), level=logging.INFO)
+        logging.basicConfig(filename=os.path.join(ckpt_folder, 'pcnet_vic_train.log'), level=logging.INFO)
         logging.info('Started')
+   
 
-    # resnet = models.video.r3d_18() 
-
-    model = BYOL_SEQ(
+    model = model_select(
         resnet,
         clip_size = args.seq_len,
         # image_size = 224,
         image_size = 112,
         hidden_layer = 'avgpool',
         projection_size = args.projection,
-        projection_hidden_size = args.pred_hidden,
-        num_layer=args.pred_layer,
-        moving_average_decay = args.ema,
-        asym_loss = not args.sym_loss,
+        projection_hidden_size = args.proj_hidden,
+        pred_hidden_size = args.pred_hidden,
+        pred_layer = args.pred_layer,
+        proj_layer = args.proj_layer,
+        sym_loss = args.sym_loss,
         closed_loop = args.closed_loop,
         mse_l = args.mse_l,
+        loop_l = args.loop_l,
         std_l = args.std_l,
         cov_l = args.cov_l,
-        # use_momentum = not args.no_mom,
-        # use_projector = not args.no_projector,
-        # use_simsiam_mlp = args.use_simsiam_mlp,
+        spa_l = args.spa_l,
         bn_last = args.bn_last,
-        pred_bn_last = args.pred_bn_last
+        pred_bn_last = args.pred_bn_last,
+        predictor = args.predictor,
+        num_predictor = args.num_predictor,
+        infonce = args.infonce,
+        sub_loss = args.sub_loss,
+        sub_frac = args.sub_frac,
+        reg_all = args.reg_all
     ).cuda(gpu)
-
-    # model = model_select(
-    #     resnet,
-    #     clip_size = args.seq_len,
-    #     image_size = 112,
-    #     hidden_layer = 'avgpool',
-    #     projection_size = args.projection,
-    #     projection_hidden_size = args.proj_hidden,
-    #     pred_hidden_size = args.pred_hidden,
-    #     pred_layer = args.pred_layer,
-    #     proj_layer = args.proj_layer,
-    #     sym_loss = args.sym_loss,
-    #     closed_loop = args.closed_loop,
-    #     mse_l = args.mse_l,
-    #     loop_l = args.loop_l,
-    #     std_l = args.std_l,
-    #     cov_l = args.cov_l,
-    #     bn_last = args.bn_last,
-    #     pred_bn_last = args.pred_bn_last,
-    #     predictor = args.predictor,
-    #     num_predictor = args.num_predictor,
-    #     infonce = args.infonce,
-    #     sub_loss = args.sub_loss,
-    #     sub_frac = args.sub_frac
-    # ).cuda(gpu)
-    model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
+    # sync bn does not works for ode
+    if args.predictor == 3:
+        model.encoder = nn.SyncBatchNorm.convert_sync_batchnorm(model.encoder)
+    else:
+        model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
     # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu], find_unused_parameters=True)
 
+    # optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.wd)
     # optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
     optimizer = LARS(
         model.parameters(),
@@ -336,7 +345,7 @@ def main():
     
 
     if args.pretrain:
-        pretrain_path = os.path.join(args.pretrain_folder, 'byol_epoch%s.pth.tar' % args.start_epoch)
+        pretrain_path = os.path.join(args.pretrain_folder, 'pcnet_epoch%s.pth.tar' % args.start_epoch)
         ckpt = torch.load(pretrain_path, map_location="cpu")
         model.load_state_dict(ckpt["model"])
         optimizer.load_state_dict(ckpt["optimizer"])
@@ -348,6 +357,12 @@ def main():
 
     if args.k400:
         loader_method = get_data_k400
+    elif args.mk200:
+        loader_method = get_data_mk200
+    elif args.mk400:
+        loader_method = get_data_mk400
+    elif args.minik:
+        loader_method = get_data_minik
     else:
         loader_method = get_data_ucf
 
@@ -367,7 +382,7 @@ def main():
                                 ddp=True,
                                 dim=150,
                                 # dim=240,
-                                fraction=args.fraction
+                                fraction=args.fraction,
                                 )
     # test_loader = get_data_ucf(batch_size=per_device_batch_size, 
     #                             mode='val',
@@ -385,10 +400,13 @@ def main():
     #                             ddp=True,
     #                             # dim=150,
     #                             dim = 240,
+    #                             fraction = args.fraction
     #                             )
     
     train_loss_list = []
     test_loss_list = []
+    train_loss_list3 = []
+    train_loss_list4 = []
     epoch_list = range(args.start_epoch, args.epochs)
     lowest_loss = np.inf
     best_epoch = 0
@@ -396,9 +414,20 @@ def main():
     # start_time = last_logging = time.time()
     scaler = torch.cuda.amp.GradScaler()
     for i in epoch_list:
+        # train_loss = train_one_epoch(args, model, train_loader, optimizer, i, gpu, scaler)
+
+        train_loss2 = train_one_epoch(args, model, train_loader, optimizer, i, gpu, scaler, diff=True) 
+        # train_loss3 = train_one_epoch(args, model, train_loader, optimizer, i, gpu, scaler) 
+
+        train_loss3 = train_one_epoch(args, model, train_loader, optimizer, i, gpu, scaler, mix=True)
+        train_loss4 = train_one_epoch(args, model, train_loader, optimizer, i, gpu, scaler, mix2=True)
+
         train_loss = train_one_epoch(args, model, train_loader, optimizer, i, gpu, scaler)
+
+        # train_loss2 = train_one_epoch(args, model, train_loader, optimizer, i, gpu, scaler, diff=True) 
         # test_loss = train_one_epoch(args, model, test_loader, optimizer, i, gpu, scaler, False)
-        test_loss = train_loss
+        # test_loss = train_loss
+        test_loss = train_loss2
         
         # current_time = time.time()
         if args.rank == 0:
@@ -407,10 +436,18 @@ def main():
                 best_epoch = i + 1
             train_loss_list.append(train_loss)
             test_loss_list.append(test_loss)
+            train_loss_list3.append(train_loss3)
+            train_loss_list4.append(train_loss4)
+
             print('Epoch: %s, Train loss: %s' % (i, train_loss))
-            print('Epoch: %s, Test loss: %s' % (i, test_loss))
+            print('Epoch: %s, Train2 loss: %s' % (i, test_loss))
+            print('Epoch: %s, Train3 loss: %s' % (i, train_loss3))
+            print('Epoch: %s, Train4 loss: %s' % (i, train_loss4))
             logging.info('Epoch: %s, Train loss: %s' % (i, train_loss))
-            logging.info('Epoch: %s, Test loss: %s' % (i, test_loss))
+            logging.info('Epoch: %s, Train2 loss: %s' % (i, test_loss))
+            logging.info('Epoch: %s, Train3 loss: %s' % (i, train_loss3))
+            logging.info('Epoch: %s, Train4 loss: %s' % (i, train_loss4))
+
 
             if (i+1)%10 == 0 or i<20:
                 # save your improved network
@@ -423,7 +460,7 @@ def main():
                     optimizer=optimizer.state_dict(),
                 )
                 checkpoint_path = os.path.join(
-                    ckpt_folder, 'byol_epoch%s.pth.tar' % str(i+1))
+                    ckpt_folder, 'pcnet_epoch%s.pth.tar' % str(i+1))
                 torch.save(state, checkpoint_path)
 
     if args.rank == 0:
@@ -435,6 +472,11 @@ def main():
         plt.plot(epoch_list, train_loss_list, label = 'train')
         # if not args.no_val:
         # plt.plot(epoch_list, test_loss_list, label = 'val')
+        plt.plot(epoch_list, test_loss_list, label = 'train2')
+        plt.plot(epoch_list, train_loss_list3, label = 'train3')
+        plt.plot(epoch_list, train_loss_list4, label = 'train4')
+
+
         # plt.title('Train and test loss')
 
         plt.legend()
@@ -450,7 +492,7 @@ def main():
                 optimizer=optimizer.state_dict(),
             )
         checkpoint_path = os.path.join(
-            ckpt_folder, 'byol_epoch%s.pth.tar' % str(args.epochs))
+            ckpt_folder, 'pcnet_epoch%s.pth.tar' % str(args.epochs))
         torch.save(state, checkpoint_path)
 
 

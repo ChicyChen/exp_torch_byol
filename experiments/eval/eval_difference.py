@@ -41,8 +41,8 @@ parser.add_argument('--frame_root', default='/data', type=str,
 # --frame_root /data
 parser.add_argument('--num_seq', default=8, type=int)
 parser.add_argument('--seq_len', default=8, type=int)
-parser.add_argument('--downsample', default=2, type=int)
-parser.add_argument('--inter_len', default=0, type=int)    # does not need to be positive
+parser.add_argument('--downsample', default=3, type=int)
+parser.add_argument('--inter_len', default=-4, type=int)    # does not need to be positive
 
 parser.add_argument('--gpu', default='1', type=str)
 parser.add_argument('--batch_size', default=1, type=int)
@@ -114,9 +114,9 @@ def main():
         hidden_layer = 'avgpool',
         projection_size = 2048,
         projection_hidden_size = 2048,
-        pred_hidden_size = 512,
+        pred_hidden_size = 16,
         num_predictor = 1,
-        pred_layer = 0,
+        pred_layer = 2,
         predictor = 1,
         proj_layer = 3,
         # pred_bn_last = True
@@ -127,8 +127,8 @@ def main():
     #     clip_size = 8,
     #     image_size = 112,
     #     hidden_layer = 'avgpool',
-    #     projection_size = 256,
-    #     projection_hidden_size = 4096,
+    #     projection_size = 64,
+    #     projection_hidden_size = 1024,
     # )
 
     model = nn.DataParallel(model)

@@ -23,6 +23,7 @@ class Difference():
                 
                 input_tensor, label = data_i # B, N, C, T, H, W
                 if label == 0 or label == 50 or label == 100:
+                # if label == 0 or label == 1 or label == 2:
                     B, N, C, T, H, W = input_tensor.shape
                     input_tensor = input_tensor.view(B*N, C, T, H, W)
                     h, z = self.model(input_tensor.to(self.device))
@@ -109,7 +110,7 @@ class Difference():
 
         ax = plt.gca()
         ax.set_aspect('equal')
-        plt.savefig(os.path.join(fpath, addn + "_projection_mdiff%s.png" % diff))
+        plt.savefig(os.path.join(fpath, addn + "_projection_3diff%s.png" % diff))
 
 
         plt.figure()
@@ -127,7 +128,7 @@ class Difference():
 
         ax = plt.gca()
         ax.set_aspect('equal')
-        plt.savefig(os.path.join(fpath, addn + "_feature_mdiff%s.png" % diff))
+        plt.savefig(os.path.join(fpath, addn + "_feature_3diff%s.png" % diff))
 
         return
 

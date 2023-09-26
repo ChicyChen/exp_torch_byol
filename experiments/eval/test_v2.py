@@ -4,9 +4,9 @@ import argparse
 sys.path.append("/home/siyich/byol-pytorch/byol_3d")
 sys.path.append("/home/siyich/byol-pytorch/evaluation_3d")
 sys.path.append("/home/siyich/byol-pytorch/utils")
-from byol_3d import BYOL
-from finetune import Fine_Tune
-# from finetune_v2 import Fine_Tune
+# from byol_3d import BYOL
+# from finetune import Fine_Tune
+from finetune_v2 import Fine_Tune
 
 
 import numpy as np
@@ -16,7 +16,8 @@ from torchvision import models
 from torchvision import transforms as T
 import torch.nn.functional as F
 
-from dataloader_3d import get_data_ucf, get_data_hmdb
+from dataloader_v2 import get_data_ucf
+# from dataloader_3d import get_data_ucf, get_data_hmdb
 from torch.utils.data import DataLoader
 
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -34,16 +35,19 @@ parser.add_argument('--gpu', default='0,1', type=str)
 parser.add_argument('--batch_size', default=1, type=int)
 
 parser.add_argument('--ckpt_folder', default='checkpoints_bad/3dseq_ucf101_lr0.0001_wd1e-05/ucf_tune_epoch100_lr0.001_wd0.001', type=str)
-parser.add_argument('--ckpt_name', default='tune_epoch60.pth.tar', type=str)
+parser.add_argument('--ckpt_name', default='tune_epoch120.pth.tar', type=str)
 
 parser.add_argument('--hmdb', action='store_true')
 parser.add_argument('--input_dim', default=512, type=int)
 parser.add_argument('--class_num', default=101, type=int)
 
-parser.add_argument('--num_seq', default=1, type=int)
-parser.add_argument('--seq_len', default=8, type=int)
-parser.add_argument('--downsample', default=8, type=int)
+parser.add_argument('--num_seq', default=10, type=int)
+parser.add_argument('--seq_len', default=16, type=int)
+parser.add_argument('--downsample', default=4, type=int)
+parser.add_argument('--inter_len', default=0, type=int)
 parser.add_argument('--num_aug', default=1, type=int)
+
+parser.add_argument('--r21d', action='store_true')
 
 
 # def default_transform():
@@ -64,6 +68,8 @@ def test_transform():
     transform = transforms.Compose([
         RandomCrop(size=128, consistent=True),
         Scale(size=(128,128)),
+        # RandomCrop(size=112, consistent=True),
+        # Scale(size=(112,112)),
         ToTensor(),
         Normalize()
     ])
@@ -80,15 +86,36 @@ def calc_accuracy(output, target):
 def tune_eval(predict_model, test_loader):
     predict_model.eval()
     acc_list =[]
+    # acc2_list = []
+    # acc3_list = []
     for data in test_loader:
         images, label = data
         images = images.to(cuda)
         label = label.to(cuda)
-        output = predict_model(images)
+
+        B, N, C, T, H, W = images.shape
+        output = predict_model(images.view(B*N, C, T, H, W))
+        output = output.reshape(B, N, -1) # B, N, D
+        output = torch.mean(output, dim=1)
+
+        # images_diff = images[:,:,:,1:,:,:] - images[:,:,:,:-1,:,:]
+        # output_diff = predict_model(images_diff.view(B*N, C, T-1, H, W))
+        # output_diff = output_diff.reshape(B, N, -1) # B, N, D
+        # output_diff = torch.mean(output_diff, dim=1)
+
         acc = calc_accuracy(output, label)
         acc_list.append(acc.cpu().detach().numpy())
+
+        # acc2 = calc_accuracy(output_diff, label)
+        # acc2_list.append(acc2.cpu().detach().numpy())
+
+        # acc3 = calc_accuracy(output + output_diff, label)
+        # acc3_list.append(acc3.cpu().detach().numpy())
+
     mean_acc = np.mean(acc_list)
-    return mean_acc
+    # mean_acc2 = np.mean(acc2_list)
+    # mean_acc3 = np.mean(acc3_list)
+    return mean_acc #, mean_acc2, mean_acc3
     
 
 
@@ -108,48 +135,51 @@ def main():
     global cuda
     cuda = torch.device('cuda')
 
-    resnet = models.video.r3d_18()
+    if args.r21d:
+        # model_name = 'r21d18'
+        resnet = models.video.r2plus1d_18()
+    else:
+        # model_name = 'r3d18'
+        resnet = models.video.r3d_18()
+        
+    resnet.fc = torch.nn.Identity()
     # modify model
     # resnet.stem[0] = torch.nn.Conv3d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
     # resnet.maxpool = torch.nn.Identity()
 
-    model = BYOL(
-        resnet,
-        clip_size = 8,
-        image_size = 128,
-        hidden_layer = 'avgpool',
-        projection_size = 256,
-        projection_hidden_size = 4096,
-    )
-
-    model = nn.DataParallel(model)
-    model = model.to(cuda)
-    model.eval()
 
     if not args.hmdb:
         args.class_num = 101
         logging.info(f"test performed on ucf")
         test_loader = get_data_ucf(batch_size=args.batch_size, 
                                     mode='test', 
-                                    transform=test_transform(), 
-                                    transform2=test_transform(),
+                                    # transform=test_transform(), 
+                                    # transform2=test_transform(),
+                                    transform_consistent=test_transform(),
+                                    transform_inconsistent=None,
                                     seq_len=args.seq_len, 
                                     num_seq=args.num_seq, 
+                                    inter_len=args.inter_len,
                                     downsample=args.downsample,
-                                    num_aug=args.num_aug)
-    else:
-        args.class_num = 51
-        logging.info(f"test performed on hmdb")
-        test_loader = get_data_hmdb(batch_size=args.batch_size, 
-                                    mode='test', 
-                                    transform=test_transform(), 
-                                    transform2=test_transform(),
-                                    seq_len=args.seq_len, 
-                                    num_seq=args.num_seq, 
-                                    downsample=args.downsample,
-                                    num_aug=args.num_aug)
+                                    # num_aug=args.num_aug,
+                                    frame_root="/data",
+                                    random=True
+                                    )
+    # else:
+    #     args.class_num = 51
+    #     logging.info(f"test performed on hmdb")
+    #     test_loader = get_data_hmdb(batch_size=args.batch_size, 
+    #                                 mode='test', 
+    #                                 transform=test_transform(), 
+    #                                 transform2=test_transform(),
+    #                                 seq_len=args.seq_len, 
+    #                                 num_seq=args.num_seq, 
+    #                                 downsample=args.downsample,
+    #                                 num_aug=args.num_aug,
+    #                                 frame_root="/data",
+    #                                 )
     
-    predict_model = Fine_Tune(model.module.online_encoder, args.input_dim, args.class_num)
+    predict_model = Fine_Tune(resnet, args.input_dim, args.class_num)
     predict_model = nn.DataParallel(predict_model)
     predict_model = predict_model.to(cuda)
 
@@ -157,9 +187,12 @@ def main():
     logging.info(f"finetuning performed after ssl")
         
     test_acc = tune_eval(predict_model, test_loader)
-        
+
     print('Test acc: %s' % (test_acc))
     logging.info('Test acc: %s' % (test_acc))
+        
+    # print('Test acc: %s, %s, %s' % (test_acc[0], test_acc[1], test_acc[2]))
+    # logging.info('Test acc: %s, %s, %s' % (test_acc[0], test_acc[1], test_acc[2]))
 
 
 if __name__ == '__main__':

@@ -76,10 +76,10 @@ class BYOL_SEQ(nn.Module):
         del self.target_encoder
         self.target_encoder = None
 
-    def update_moving_average(self):
+    def update_moving_average(self, step=None, total_steps=None):
         assert self.use_momentum, 'you do not need to update the moving average, since you have turned off momentum for the target encoder'
         assert self.target_encoder is not None, 'target encoder has not been created yet'
-        update_moving_average(self.target_ema_updater, self.target_encoder, self.online_encoder)
+        update_moving_average(self.target_ema_updater, self.target_encoder, self.online_encoder, step, total_steps)
 
     def loss_fn(self, x, y):
         return vic_reg_loss(x, y, self.mse_l, self.std_l, self.cov_l)
